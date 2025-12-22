@@ -97,22 +97,37 @@
                 brand: document.getElementById('p-brand').value,
                 price: document.getElementById('p-price').value,
                 warranty: document.getElementById('p-warranty').value,
-                image: capturedImage
+                image: capturedImage // capturedImage là biến lưu ảnh Base64
             };
-
+        
             if(!data.name || !data.typeId) return alert("Vui lòng điền Tên và Loại!");
-
+        
+            // Hiện thông báo đang kết nối (nếu bạn có loader)
             try {
                 const res = await fetch(API_URL, {
                     method: 'POST',
                     body: JSON.stringify({ action: "add_product", data: data })
                 });
                 const json = await res.json();
+                
                 if(json.status === "success") {
-                    alert("Thành công! Mã: " + json.data.smartCode);
-                    location.reload();
+                    alert("Thành công! Mã sản phẩm mới: " + json.data.smartCode);
+                    
+                    // --- KHÔNG DÙNG location.reload() ---
+                    // CHỈ LÀM TRỐNG CÁC Ô NHẬP LIỆU ĐỂ NHẬP TIẾP
+                    document.getElementById('p-name').value = "";
+                    document.getElementById('p-type').value = "";
+                    document.getElementById('p-brand').value = "";
+                    document.getElementById('p-price').value = "";
+                    document.getElementById('img-preview').classList.add('hidden'); // Ẩn ảnh cũ
+                    capturedImage = ""; // Xóa dữ liệu ảnh cũ
+                    
+                } else {
+                    alert("Lỗi: " + json.message);
                 }
-            } catch (e) { alert("Lỗi lưu sản phẩm!"); }
+            } catch (e) { 
+                alert("Lỗi kết nối máy chủ khi lưu!"); 
+            }
         }
     </script>
 </body>
