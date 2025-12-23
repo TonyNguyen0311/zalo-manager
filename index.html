@@ -226,7 +226,17 @@
         headers: { 'Content-Type':'application/json' },
         body: JSON.stringify({ action:'login', data:{ phone, password } })
       });
-      const json = await res.json();
+      // debug logs (helpful khi server trả HTML hoặc lỗi)
+      console.log('login status', res.status, res.statusText);
+      const text = await res.text();
+      console.log('login response text', text);
+      let json;
+      try { json = JSON.parse(text); } catch (err) {
+        console.error('Invalid JSON from login response', err);
+        showError('login-error', 'API trả dữ liệu không hợp lệ (không phải JSON)');
+        return;
+      }
+
       if (json.status === 'success') {
         const u = json.data;
         localStorage.setItem('zf_user', JSON.stringify(u));
@@ -240,6 +250,7 @@
         showError('login-error', json.message || 'Sai thông tin đăng nhập');
       }
     } catch (e) {
+      console.error('Login error', e);
       showError('login-error', 'Không gọi được API. Kiểm tra API_URL hoặc quyền triển khai.');
     }
   }
@@ -283,7 +294,14 @@
         headers: { 'Content-Type':'application/json' },
         body: JSON.stringify({ action:'add_product', data })
       });
-      const json = await res.json();
+      const text = await res.text();
+      let json;
+      try { json = JSON.parse(text); } catch (err) {
+        console.error('Invalid JSON from add_product', err, text);
+        showError('add-error','API trả dữ liệu không hợp lệ khi lưu sản phẩm');
+        return;
+      }
+
       if (json.status === 'success') {
         showSuccess('add-success', `Đã tạo mã: ${json.data.smartCode}`);
         // reset form
@@ -298,6 +316,7 @@
         showError('add-error', json.message || 'Không lưu được sản phẩm');
       }
     } catch (e) {
+      console.error('Save product error', e);
       showError('add-error', 'Không gọi được API khi lưu sản phẩm');
     }
   }
@@ -310,7 +329,13 @@
         headers: { 'Content-Type':'application/json' },
         body: JSON.stringify({ action:'get_products' })
       });
-      const json = await res.json();
+      const text = await res.text();
+      let json;
+      try { json = JSON.parse(text); } catch (err) {
+        console.error('Invalid JSON from get_products', err, text);
+        showToast('API trả dữ liệu không hợp lệ khi tải SP');
+        return;
+      }
       if (json.status === 'success') {
         allProducts = Array.isArray(json.data) ? json.data : [];
         renderProductList();
@@ -319,6 +344,7 @@
         showToast(json.message || 'Không tải được sản phẩm');
       }
     } catch (e) {
+      console.error('Load products error', e);
       showToast('Lỗi tải danh sách SP');
     }
   }
@@ -395,7 +421,14 @@
           data: { productId, productName, quantity, type: stockType, note }
         })
       });
-      const json = await res.json();
+      const text = await res.text();
+      let json;
+      try { json = JSON.parse(text); } catch (err) {
+        console.error('Invalid JSON from update_stock', err, text);
+        showError('stock-error', 'API trả dữ liệu không hợp lệ khi cập nhật kho');
+        return;
+      }
+
       if (json.status === 'success') {
         showSuccess('stock-success','Đã ghi giao dịch kho');
         const qty = document.getElementById('stock-qty');
@@ -406,6 +439,7 @@
         showError('stock-error', json.message || 'Không ghi được giao dịch kho');
       }
     } catch (e) {
+      console.error('Stock update error', e);
       showError('stock-error', 'Không gọi được API khi cập nhật kho');
     }
   }
