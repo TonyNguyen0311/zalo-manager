@@ -63,7 +63,7 @@ class ProductManager:
         # SỬ DỤNG HÀM AN TOÀN -> Fix lỗi KeyError: 'id'
         return self._get_safe_list(self.unit_col)
 
-    # --- SẢN PHẨM ---
+# --- SẢN PHẨM ---
     def create_product(self, product_data):
         transaction = self.db.transaction()
         # Đảm bảo category_id hợp lệ
@@ -73,10 +73,12 @@ class ProductManager:
         cat_ref = self.cat_col.document(product_data['category_id'])
 
         try:
+            # SỬA LẠI DÒNG NÀY: Truyền product_data như một tham số bình thường sau cat_ref
             return self._create_product_transaction(transaction, cat_ref, product_data)
         except Exception as e:
             return False, f"Lỗi tạo sản phẩm: {str(e)}"
 
+    # GIỮ NGUYÊN DECORATOR VÀ THAM SỐ
     @firestore.transactional
     def _create_product_transaction(self, transaction, cat_ref, product_data):
         snapshot = cat_ref.get(transaction=transaction)
