@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from google.cloud import firestore
 
 class CustomerManager:
     def __init__(self, firebase_client):
@@ -52,12 +53,11 @@ class CustomerManager:
         """
         if not customer_id: return
 
-        from google.cloud.firestore import FieldValue
         customer_ref = self.collection.document(customer_id)
         
         # Dùng FieldValue.increment để đảm bảo an toàn
         transaction.update(customer_ref, {
-            'total_spent': FieldValue.increment(amount_spent_delta),
-            'points': FieldValue.increment(points_delta),
+            'total_spent': firestore.FieldValue.increment(amount_spent_delta),
+            'points': firestore.FieldValue.increment(points_delta),
             'last_purchase_date': datetime.now().isoformat()
         })
