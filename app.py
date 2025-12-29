@@ -1,73 +1,91 @@
 import streamlit as st
-import json
+from config.firebase_config import FirebaseClient
 
-# IMPORT MANAGERS
-from managers.firebase_client import FirebaseClient
+# Import các managers
 from managers.auth_manager import AuthManager
 from managers.branch_manager import BranchManager
 from managers.product_manager import ProductManager
+from managers.inventory_manager import InventoryManager
+from managers.customer_manager import CustomerManager
+from managers.pos_manager import POSManager
+from managers.report_manager import ReportManager # MỚI
 
-# IMPORT UI PAGES
-from ui import login_page, products_page
+# Import các trang UI
+from ui.login_page import render_login
+from ui.product_page import render_product_page
+from ui.branch_page import render_branch_page
+from ui.inventory_page import render_inventory_page
+from ui.pos_page import render_pos_page
+from ui.report_page import render_report_page # MỚI
 
-# 1. SETUP PAGE
-st.set_page_config(page_title="NK-POS System", page_icon="🛒", layout="wide")
+st.set_page_config(layout="wide")
 
-st.markdown("""
-<style>
-    .main-header {font-size: 1.5rem; color: #4C9EE3; font-weight: bold; margin-bottom: 20px;}
-    .stButton>button {border-radius: 6px;}
-</style>
-""", unsafe_allow_html=True)
-
-# 2. INIT SINGLETONS
-if 'db_client' not in st.session_state:
-    if "firebase" in st.secrets:
-        creds_str = st.secrets["firebase"]["credentials_json"]
-        creds = json.loads(creds_str) if isinstance(creds_str, str) else creds_str
-        bucket = st.secrets["firebase"].get("storage_bucket")
-        st.session_state.db_client = FirebaseClient(creds, bucket)
-    else:
-        st.error("Chưa cấu hình Secrets!")
-        st.stop()
-        
-    client = st.session_state.db_client
-    st.session_state.auth_mgr = AuthManager(client)
-    st.session_state.branch_mgr = BranchManager(client)
-    st.session_state.product_mgr = ProductManager(client)
-
-# 3. ROUTER
 def main():
-    if 'user' not in st.session_state:
-        login_page.render_login()
-        return
-
-    user = st.session_state.user
+    # --- KHỞI TẠO --- 
+    if 'firebase_client' not in st.session_state:
+        st.session_state.firebase_client = FirebaseClient()
     
-    with st.sidebar:
-        st.title("🛒 NK-POS")
-        st.caption(f"Chi nhánh: {st.session_state.branch_mgr.get_branch(user['branch_id']).get('name', 'N/A')}")
-        st.write(f"👤 **{user['display_name']}**")
-        st.divider()
+    if 'auth_mgr' not in st.session_state:
+        st.session_state.auth_mgr = AuthManager(st.session_state.firebase_client)
+
+    if 'branch_mgr' not in st.session_state:
+        st.session_state.branch_mgr = BranchManager(st.session_state.firebase_client)
+    
+    if 'product_mgr' not in st.session_state:
+        st.session_state.product_mgr = ProductManager(st.session_state.firebase_client)
+
+    if 'inventory_mgr' not in st.session_state:
+        st.session_state.inventory_mgr = InventoryManager(st.session_state.firebase_client)
+
+    if 'customer_mgr' not in st.session_state:
+        st.session_state.customer_mgr = CustomerManager(st.session_state.firebase_client)
+
+    if 'report_mgr' not in st.session_state:
+        st.session_state.report_mgr = ReportManager(st.session_state.firebase_client)
+
+    if 'pos_mgr' not in st.session_state:
+        st.session_state.pos_mgr = POSManager(
+            st.session_state.firebase_client, 
+            st.session_state.inventory_mgr, 
+            st.session_state.customer_mgr, 
+            None # voucher_mgr chưa có
+        )
+
+    # --- ROUTING --- 
+    if 'user' not in st.session_state or st.session_state.user is None:
+        render_login()
+    else:
+        # Lấy thông tin user
+        user_info = st.session_state.user
+        st.sidebar.success(f"Xin chào, {user_info['display_name']}!")
+        st.sidebar.write(f"Chi nhánh: **{st.session_state.branch_mgr.get_branch(user_info['branch_id'])['name']}**")
+        st.sidebar.write(f"Vai trò: **{user_info['role']}**")
+
+        # Menu dựa trên vai trò
+        menu_options_admin = ["Bán hàng (POS)", "Báo cáo", "Quản lý Sản phẩm", "Quản lý Kho", "Quản lý Chi nhánh", "Quản trị"]
+        menu_options_staff = ["Bán hàng (POS)", "Báo cáo", "Quản lý Kho"]
         
-        menu = ["Bán hàng (POS)", "Sản phẩm", "Kho hàng", "Báo cáo"]
-        if user['role'] == 'ADMIN':
-            menu.extend(["Quản trị", "Cấu hình"])
+        if user_info['role'] == 'ADMIN':
+            page = st.sidebar.selectbox("Chức năng", menu_options_admin)
+        else: # STAFF
+            page = st.sidebar.selectbox("Chức năng", menu_options_staff, help="Một số chức năng yêu cầu quyền ADMIN.")
+
+        # Hiển thị trang tương ứng
+        if page == "Bán hàng (POS)":
+            render_pos_page()
+        elif page == "Báo cáo":
+            render_report_page()
+        elif page == "Quản lý Sản phẩm":
+            render_product_page()
+        elif page == "Quản lý Chi nhánh":
+            render_branch_page()
+        elif page == "Quản lý Kho":
+            render_inventory_page()
+        # Các trang khác sẽ được thêm sau
         
-        choice = st.radio("Menu", menu, label_visibility="collapsed")
-        
-        st.divider()
-        if st.button("Đăng xuất"):
+        if st.sidebar.button("Đăng xuất"):
             del st.session_state.user
             st.rerun()
-
-    # Điều hướng
-    if choice == "Sản phẩm":
-        products_page.render()   # <--- Dòng quan trọng này
-    elif choice == "Bán hàng (POS)":
-        st.info("Module POS đang xây dựng...")
-    else:
-        st.info(f"Đang phát triển: {choice}")
 
 if __name__ == "__main__":
     main()

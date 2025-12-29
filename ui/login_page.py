@@ -14,6 +14,7 @@ def render_login():
             st.subheader("1. Tạo Chi Nhánh Chính")
             br_name = st.text_input("Tên chi nhánh", "Cửa hàng Chính")
             br_addr = st.text_input("Địa chỉ", "Hà Nội")
+            br_phone = st.text_input("Số điện thoại", "")
             
             st.subheader("2. Tạo Tài khoản Admin")
             adm_user = st.text_input("Username", "admin")
@@ -27,8 +28,10 @@ def render_login():
                     st.error("Vui lòng nhập đủ thông tin.")
                 else:
                     with st.spinner("Đang khởi tạo..."):
-                        # 1. Tạo Branch
-                        branch = branch_mgr.create_branch(br_name, br_addr, "")
+                        # 1. Tạo Branch (đã cập nhật)
+                        branch_data = {"name": br_name, "address": br_addr, "phone": br_phone}
+                        branch = branch_mgr.create_branch(branch_data)
+
                         # 2. Tạo User Admin gắn với Branch đó
                         success, msg = auth_mgr.create_user(
                             username=adm_user,

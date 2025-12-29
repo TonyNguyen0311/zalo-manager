@@ -33,7 +33,7 @@ class ProductManager:
             results.append(data)
         return results
 
-    # --- DANH MỤC ---
+    # --- DANH MỤC --
     def create_category(self, name, prefix):
         cat_id = f"CAT-{uuid.uuid4().hex[:4].upper()}"
         data = {
@@ -108,8 +108,10 @@ class ProductManager:
     def update_product(self, sku, updates):
         self.collection.document(sku).update(updates)
 
-    def get_all_products(self):
-        docs = self.collection.where("active", "==", True).stream()
+    def list_products(self, filters: dict | None = None):
+        # TODO: Implement filtering based on the 'filters' dictionary
+        query = self.collection.where("active", "==", True)
+        docs = query.stream()
         results = []
         for doc in docs:
             d = doc.to_dict()

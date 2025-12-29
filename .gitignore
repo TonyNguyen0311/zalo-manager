@@ -1,15 +1,6 @@
-# Python
+.idx/
 __pycache__/
-*.py[cod]
-*$py.class
-*.env
-.venv
-env/
+*.pyc
+.venv/
 venv/
-
-# Streamlit
-.streamlit/secrets.toml
-
-# Firebase credentials (chặn tuyệt đối)
-*.json
-serviceAccountKey.json
+.env
