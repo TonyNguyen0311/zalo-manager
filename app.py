@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 from managers.firebase_client import FirebaseClient
 
 # Import các managers
@@ -22,22 +23,27 @@ st.set_page_config(layout="wide")
 
 def main():
     # Check if Firebase credentials are provided in secrets
-    if "firebase_service_account" not in st.secrets:
-        st.error("Firebase secrets not found. Please add your Firebase service account credentials to .streamlit/secrets.toml.")
+    if "firebase" not in st.secrets or "credentials_json" not in st.secrets.firebase:
+        st.error("Firebase secrets not found. Please ensure 'credentials_json' is set in your Streamlit Cloud secrets under the '[firebase]' section.")
         st.info("For more information, see: https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management")
         # Stop execution if secrets are not available
         return
 
-    # --- KHỞI TẠO --- 
+    # --- KHỞI TẠO ---
     if 'firebase_client' not in st.session_state:
-        st.session_state.firebase_client = FirebaseClient(st.secrets["firebase_service_account"])
-    
+        try:
+            creds_dict = json.loads(st.secrets["firebase"]["credentials_json"])
+            st.session_state.firebase_client = FirebaseClient(creds_dict)
+        except json.JSONDecodeError:
+            st.error("Failed to parse Firebase credentials. Please check the format of your 'credentials_json' secret.")
+            return
+
     if 'auth_mgr' not in st.session_state:
         st.session_state.auth_mgr = AuthManager(st.session_state.firebase_client)
 
     if 'branch_mgr' not in st.session_state:
         st.session_state.branch_mgr = BranchManager(st.session_state.firebase_client)
-    
+
     if 'product_mgr' not in st.session_state:
         st.session_state.product_mgr = ProductManager(st.session_state.firebase_client)
 
@@ -52,13 +58,13 @@ def main():
 
     if 'pos_mgr' not in st.session_state:
         st.session_state.pos_mgr = POSManager(
-            st.session_state.firebase_client, 
-            st.session_state.inventory_mgr, 
-            st.session_state.customer_mgr, 
+            st.session_state.firebase_client,
+            st.session_state.inventory_mgr,
+            st.session_state.customer_mgr,
             None # voucher_mgr chưa có
         )
 
-    # --- ROUTING --- 
+    # --- ROUTING ---
     if 'user' not in st.session_state or st.session_state.user is None:
         render_login()
     else:
@@ -71,7 +77,7 @@ def main():
         # Menu dựa trên vai trò
         menu_options_admin = ["Bán hàng (POS)", "Báo cáo", "Quản lý Sản phẩm", "Quản lý Kho", "Quản lý Chi nhánh", "Quản trị"]
         menu_options_staff = ["Bán hàng (POS)", "Báo cáo", "Quản lý Kho"]
-        
+
         if user_info['role'] == 'ADMIN':
             page = st.sidebar.selectbox("Chức năng", menu_options_admin)
         else: # STAFF
@@ -89,7 +95,7 @@ def main():
         # elif page == "Quản lý Kho":
         #     render_inventory_page()
         # Các trang khác sẽ được thêm sau
-        
+
         if st.sidebar.button("Đăng xuất"):
             del st.session_state.user
             st.rerun()
