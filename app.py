@@ -19,19 +19,16 @@ st.markdown("""
 # 3. Khởi tạo kết nối Firebase (Singleton)
 if 'db_client' not in st.session_state:
     try:
-        # Lấy secrets từ Streamlit Cloud
         if "firebase" in st.secrets:
             creds_str = st.secrets["firebase"]["credentials_json"]
-            # Streamlit secrets trả về string hoặc dict tùy cấu hình, ta đảm bảo nó là dict
             if isinstance(creds_str, str):
                 creds = json.loads(creds_str)
             else:
                 creds = creds_str
-                
-            bucket_name = st.secrets["firebase"].get("storage_bucket")
             
-            st.session_state.db_client = FirebaseClient(creds, bucket_name)
-            st.toast("Kết nối Firebase thành công!", icon="🔥")
+            # Không truyền bucket_name nữa
+            st.session_state.db_client = FirebaseClient(creds)
+            st.toast("Kết nối Database thành công!", icon="🔥")
         else:
             st.warning("Chưa cấu hình Firebase Secrets.")
             
