@@ -45,7 +45,7 @@ def main():
     user = st.session_state.user
     
     with st.sidebar:
-        st.title("🛒 S-POS")
+        st.title("🛒 NK-POS")
         st.caption(f"Chi nhánh: {st.session_state.branch_mgr.get_branch(user['branch_id']).get('name', 'N/A')}")
         st.write(f"👤 **{user['display_name']}**")
         st.divider()
