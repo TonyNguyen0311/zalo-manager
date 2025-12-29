@@ -1,0 +1,6 @@
+streamlit
+firebase-admin
+pandas
+streamlit-antd-components
+python-dotenv
+google-cloud-storage
