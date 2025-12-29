@@ -4,3 +4,4 @@ pandas
 streamlit-antd-components
 python-dotenv
 google-cloud-storage
+bcrypt
