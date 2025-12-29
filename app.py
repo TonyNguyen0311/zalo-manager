@@ -21,6 +21,13 @@ from ui.report_page import render_report_page # MỚI
 st.set_page_config(layout="wide")
 
 def main():
+    # Check if Firebase credentials are provided in secrets
+    if "firebase_service_account" not in st.secrets:
+        st.error("Firebase secrets not found. Please add your Firebase service account credentials to .streamlit/secrets.toml.")
+        st.info("For more information, see: https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management")
+        # Stop execution if secrets are not available
+        return
+
     # --- KHỞI TẠO --- 
     if 'firebase_client' not in st.session_state:
         st.session_state.firebase_client = FirebaseClient(st.secrets["firebase_service_account"])
