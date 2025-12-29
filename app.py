@@ -36,7 +36,7 @@ if 'db_client' not in st.session_state:
         st.error(f"Không thể kết nối Firebase: {e}")
 
 # 4. Giao diện chính
-st.markdown('<div class="main-header">🛒 S-POS System</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🛒 NK-POS System</div>', unsafe_allow_html=True)
 st.write("Chào mừng đến với hệ thống quản lý bán hàng đa chi nhánh.")
 
 # Kiểm tra trạng thái
