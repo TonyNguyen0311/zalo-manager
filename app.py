@@ -12,7 +12,6 @@ from managers.inventory_manager import InventoryManager
 from managers.customer_manager import CustomerManager
 from managers.pos_manager import POSManager
 from managers.report_manager import ReportManager
-# <<< SỬA LỖI BẢO MẬT: Xóa import của hàm không còn tồn tại
 from managers.session_manager import is_session_active
 from managers.settings_manager import SettingsManager
 from managers.promotion_manager import PromotionManager
@@ -103,7 +102,12 @@ def display_sidebar():
     elif branch_ids:
         branch_names = [st.session_state.branch_mgr.get_branch_name(b_id) for b_id in branch_ids]
         st.sidebar.write(f"Chi nhánh: **{', '.join(branch_names)}**")
+    
+    # <<< GIẢI PHÁP TẠM THỜI: Hiển thị mục Quản lý người dùng cho tất cả mọi người
     available_pages = MENU_PERMISSIONS.get(role, [])
+    if "Quản lý Người dùng" not in available_pages:
+        available_pages.append("Quản lý Người dùng")
+
     if not available_pages:
         st.sidebar.warning("Không có chức năng nào được cấp phép.")
     ordered_pages = []
@@ -115,7 +119,6 @@ def display_sidebar():
     ordered_pages.extend(available_pages)
     page = st.sidebar.selectbox("Chức năng", ordered_pages, key="main_menu")
     if st.sidebar.button("Đăng xuất"):
-        # <<< SỬA LỖI BẢO MẬT: Xóa logic xử lý file .remember_me
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
@@ -125,7 +128,6 @@ def main():
     if not init_managers():
         return
 
-    # <<< SỬA LỖI BẢO MẬT: Xóa kiểm tra `check_remember_me`
     if not is_session_active():
         render_login()
         return
@@ -139,7 +141,7 @@ def main():
         "Quản lý Chi phí": lambda: render_cost_page(st.session_state.cost_mgr, st.session_state.branch_mgr, st.session_state.auth_mgr),
         "Quản lý Khuyến mãi": lambda: render_promotions_page(st.session_state.promotion_mgr, st.session_state.product_mgr, st.session_state.branch_mgr),
         "Quản lý Người dùng": lambda: render_user_management_page(st.session_state.auth_mgr, st.session_state.branch_mgr),
-        "Quản trị Hệ thống": lambda: render_settings_page(st.session_state.settings_mgr),
+        "Quản trị Hệ thống": lambda: render_settings_page(st.session_state.settings_mgr, st.session_state.auth_mgr),
         "Danh mục Sản phẩm": lambda: render_product_catalog_page(st.session_state.product_mgr, st.session_state.auth_mgr),
         "Sản phẩm Kinh doanh": lambda: render_business_products_page(st.session_state.auth_mgr, st.session_state.branch_mgr, st.session_state.product_mgr, st.session_state.price_mgr),
     }
