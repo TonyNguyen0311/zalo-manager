@@ -33,10 +33,18 @@ class AuthManager:
             
             self.users_col.document(user_id).update({"last_login": datetime.now().isoformat()})
             
-            # Ensure uid is in the session data for consistency
             user_data['uid'] = user_id
 
-            # Save user info to session state
+            # FIX: Chuẩn hóa dữ liệu, chuyển đổi `branch_id` (cũ) thành `branch_ids` (mới)
+            if 'branch_id' in user_data and 'branch_ids' not in user_data:
+                branch_id_value = user_data.pop('branch_id')
+                # Chỉ thêm vào danh sách nếu có giá trị
+                if branch_id_value:
+                    user_data['branch_ids'] = [branch_id_value]
+                else:
+                    user_data['branch_ids'] = []
+
+            # Lưu thông tin người dùng đã được chuẩn hóa vào session
             st.session_state['user'] = user_data
             return user_data
             
@@ -77,6 +85,10 @@ class AuthManager:
         data['created_at'] = datetime.now().isoformat()
         data['active'] = True
         
+        # Đảm bảo branch_ids là một danh sách
+        if 'branch_ids' not in data:
+            data['branch_ids'] = []
+
         self.users_col.document(uid).set(data)
         data.pop('password_hash', None)
         return data
