@@ -42,32 +42,4 @@ def is_session_active():
     st.session_state.last_activity = time.time()
     return True
 
-def handle_remember_me(user):
-    """
-    If "Remember me" is checked, store a token to re-authenticate the user.
-    (This is a simplified example, in a real-world scenario, you'd use a secure, 
-     long-lived token stored in a cookie or browser storage).
-    """
-    if st.session_state.get("remember_me"):
-        # For simplicity, we'll store the user info directly in a file.
-        # In a real app, this should be a secure token.
-        with open(".remember_me", "w") as f:
-            f.write(str(user))
-    else:
-        # If "remember me" is not checked, ensure the file is deleted
-        if ".remember_me" in st.session_state:
-            del st.session_state[".remember_me"]
-
-
-def check_remember_me():
-    """
-    Checks for a "remember me" token and logs the user in if it exists.
-    """
-    try:
-        with open(".remember_me", "r") as f:
-            user_info = eval(f.read())
-            st.session_state.user = user_info
-            return True
-    except (FileNotFoundError, SyntaxError):
-        return False
-
+# The insecure 'remember_me' functions have been removed.

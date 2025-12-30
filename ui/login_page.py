@@ -1,7 +1,6 @@
 
 import streamlit as st
 import time
-from managers.session_manager import handle_remember_me
 
 def render_login():
     auth_mgr = st.session_state.auth_mgr
@@ -49,7 +48,6 @@ def render_login():
     with st.form("login_form"):
         username = st.text_input("Tên đăng nhập")
         password = st.text_input("Mật khẩu", type="password")
-        remember_me = st.checkbox("Ghi nhớ đăng nhập")
         
         btn_login = st.form_submit_button("Đăng nhập", use_container_width=True)
 
@@ -57,8 +55,6 @@ def render_login():
             user = auth_mgr.login(username, password)
             if user:
                 st.session_state.user = user
-                st.session_state.remember_me = remember_me
-                handle_remember_me(user)
                 st.success(f"Xin chào {user['display_name']}!")
                 st.rerun()
             else:
