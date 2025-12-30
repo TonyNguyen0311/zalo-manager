@@ -1,6 +1,7 @@
 
 import streamlit as st
 import json
+from datetime import datetime
 from managers.firebase_client import FirebaseClient
 
 # Import managers
@@ -119,6 +120,7 @@ def display_sidebar():
     if st.sidebar.button("Đăng xuất"):
         st.session_state.auth_mgr.logout()
         
+    st.sidebar.caption(f"Phiên bản: {int(datetime.now().timestamp())}")
     return page
 
 def main():
