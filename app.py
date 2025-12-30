@@ -27,8 +27,8 @@ from ui.promotions_page import render_promotions_page
 from ui.cost_page import render_cost_page
 from ui.inventory_page import render_inventory_page
 from ui.user_management_page import render_user_management_page
-from ui.product_catalog_page import render_product_catalog_page # <<< MỚI
-from ui.business_products_page import render_business_products_page # <<< MỚI
+from ui.product_catalog_page import render_product_catalog_page
+from ui.business_products_page import render_business_products_page
 
 st.set_page_config(layout="wide")
 
@@ -58,7 +58,6 @@ MENU_PERMISSIONS = {
 }
 
 def init_managers():
-    # ... (Hàm này giữ nguyên) ...
     if "firebase" not in st.secrets or "credentials_json" not in st.secrets.firebase:
         st.error("Firebase secrets not found...")
         return False
@@ -93,10 +92,12 @@ def init_managers():
     return True
 
 def display_sidebar():
-    # ... (Hàm này giữ nguyên) ...
     user_info = st.session_state.user
     st.sidebar.success(f"Xin chào, {user_info.get('display_name', 'Người dùng')}!")
-    role = user_info.get('role', 'staff')
+    
+    # <<< SỬA LỖI 1: Chuyển vai trò về chữ thường để khớp với key của MENU_PERMISSIONS
+    role = user_info.get('role', 'staff').lower()
+    
     st.sidebar.write(f"Vai trò: **{role.upper()}**")
     branch_ids = user_info.get('branch_ids', [])
     if role == 'admin':
@@ -104,12 +105,22 @@ def display_sidebar():
     elif branch_ids:
         branch_names = [st.session_state.branch_mgr.get_branch_name(b_id) for b_id in branch_ids]
         st.sidebar.write(f"Chi nhánh: **{', '.join(branch_names)}**")
+
     available_pages = MENU_PERMISSIONS.get(role, [])
-    if "Bán hàng (POS)" in available_pages:
-        available_pages.insert(0, available_pages.pop(available_pages.index("Bán hàng (POS)")))
-    if "Báo cáo & Phân tích" in available_pages:
-         available_pages.insert(0, available_pages.pop(available_pages.index("Báo cáo & Phân tích")))
-    page = st.sidebar.selectbox("Chức năng", available_pages, key="main_menu")
+    if not available_pages:
+        st.sidebar.warning("Không có chức năng nào được cấp phép.")
+
+    # Sắp xếp lại thứ tự cho hợp lý
+    ordered_pages = []
+    preferred_order = ["Báo cáo & Phân tích", "Bán hàng (POS)"]
+    for item in preferred_order:
+        if item in available_pages:
+            ordered_pages.append(item)
+            available_pages.remove(item)
+    ordered_pages.extend(available_pages) # Thêm các trang còn lại
+
+    page = st.sidebar.selectbox("Chức năng", ordered_pages, key="main_menu")
+    
     if st.sidebar.button("Đăng xuất"):
         if os.path.exists(".remember_me"):
             os.remove(".remember_me")
@@ -128,23 +139,22 @@ def main():
     
     page = display_sidebar()
 
-    # Ánh xạ tên menu tới hàm render tương ứng (Cấu trúc mới)
+    # <<< SỬA LỖI 2: Các hàm render không còn nhận tham số trực tiếp
     page_renderers = {
-        "Bán hàng (POS)": lambda: render_pos_page(st.session_state.pos_mgr),
-        "Báo cáo & Phân tích": lambda: render_report_page(st.session_state.report_mgr, st.session_state.branch_mgr, st.session_state.auth_mgr),
-        "Quản lý Kho": lambda: render_inventory_page(st.session_state.inventory_mgr, st.session_state.branch_mgr, st.session_state.product_mgr, st.session_state.auth_mgr),
-        "Quản lý Chi phí": lambda: render_cost_page(st.session_state.cost_mgr, st.session_state.branch_mgr, st.session_state.auth_mgr),
-        "Quản lý Khuyến mãi": lambda: render_promotions_page(st.session_state.promotion_mgr, st.session_state.product_mgr, st.session_state.branch_mgr),
-        "Quản lý Người dùng": lambda: render_user_management_page(st.session_state.auth_mgr, st.session_state.branch_mgr),
-        "Quản trị Hệ thống": lambda: render_settings_page(st.session_state.settings_mgr),
-        
-        # Menu mới
-        "Danh mục Sản phẩm": lambda: render_product_catalog_page(st.session_state.product_mgr, st.session_state.auth_mgr),
-        "Sản phẩm Kinh doanh": lambda: render_business_products_page(st.session_state.auth_mgr, st.session_state.branch_mgr, st.session_state.product_mgr, st.session_state.price_mgr),
+        "Bán hàng (POS)": render_pos_page,
+        "Báo cáo & Phân tích": render_report_page,
+        "Quản lý Kho": render_inventory_page,
+        "Quản lý Chi phí": render_cost_page,
+        "Quản lý Khuyến mãi": render_promotions_page,
+        "Quản lý Người dùng": render_user_management_page,
+        "Quản trị Hệ thống": render_settings_page,
+        "Danh mục Sản phẩm": render_product_catalog_page,
+        "Sản phẩm Kinh doanh": render_business_products_page,
     }
 
-    if page in page_renderers:
-        page_renderers[page]()
+    renderer = page_renderers.get(page)
+    if renderer:
+        renderer()
     else:
         st.warning(f"Trang '{page}' đang trong quá trình phát triển hoặc đã bị loại bỏ.")
 
