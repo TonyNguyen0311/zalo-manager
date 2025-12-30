@@ -18,18 +18,28 @@ class AuthManager:
         return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
     def login(self, username, password):
-        docs = self.users_col.where("username", "==", username).where("active", "==", True).limit(1).stream()
-        user_list = [d.to_dict() for d in docs]
-        if not user_list:
-            return None
+        docs_stream = self.users_col.where("username", "==", username).where("active", "==", True).limit(1).stream()
         
-        user_data = user_list[0]
+        user_doc = next(docs_stream, None)
+
+        if not user_doc:
+            return None
+
+        user_data = user_doc.to_dict()
+        user_id = user_doc.id
+
         if self._check_password(password, user_data.get('password_hash', "")):
             user_data.pop('password_hash', None)
-            self.users_col.document(user_data['uid']).update({"last_login": datetime.now().isoformat()})
-            # Lưu thông tin user vào session state để truy cập toàn cục
+            
+            self.users_col.document(user_id).update({"last_login": datetime.now().isoformat()})
+            
+            # Ensure uid is in the session data for consistency
+            user_data['uid'] = user_id
+
+            # Save user info to session state
             st.session_state['user'] = user_data
             return user_data
+            
         return None
 
     def get_current_user_info(self):
@@ -47,6 +57,7 @@ class AuthManager:
         for doc in docs:
             user = doc.to_dict()
             user.pop('password_hash', None)
+            user['uid'] = doc.id # Ensure uid is always present
             users.append(user)
         return users
 
