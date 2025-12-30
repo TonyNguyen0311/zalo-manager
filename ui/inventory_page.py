@@ -20,7 +20,7 @@ def render_inventory_page(inv_mgr: InventoryManager, prod_mgr: ProductManager, b
 
     user_role = user_info.get('role', 'staff')
     user_branches = user_info.get('branch_ids', [])
-    all_branches_map = {b['id']: b['name'] for b in branch_mgr.get_branches()}
+    all_branches_map = {b['id']: b['name'] for b in branch_mgr.list_branches(active_only=False)}
 
     allowed_branches_map = {}
     if user_role == 'admin':
@@ -120,13 +120,13 @@ def render_inventory_page(inv_mgr: InventoryManager, prod_mgr: ProductManager, b
                             sku=selected_sku,
                             branch_id=selected_branch,
                             quantity=quantity,
-                            user_id=user_info['id'],
+                            user_id=user_info['uid'],
                             cost_price=cost_price,
                             supplier=supplier,
                             notes=notes
                         )
                     st.success(f"Nhập hàng thành công cho sản phẩm {product_options[selected_sku]}.")
-                    # Có thể thêm st.rerun() để cập nhật ngay lập tức các tab khác
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Đã xảy ra lỗi: {e}")
 
