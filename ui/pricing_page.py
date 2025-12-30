@@ -19,9 +19,9 @@ def render_pricing_page():
         st.session_state.pricing_selected_branch = current_user['branch_id']
 
     # 3. LẤY DỮ LIỆU GỐC
-    master_products = product_mgr.list_master_products()
+    master_products = product_mgr.list_products()
     categories = product_mgr.get_categories()
-    suppliers = product_mgr.get_suppliers()
+    suppliers = [] # TODO: product_mgr.get_suppliers() is not implemented yet.
     branches = branch_mgr.list_branches()
 
     # 4. BỐ CỤC 2 CỘT
@@ -33,7 +33,7 @@ def render_pricing_page():
     with col_left:
         st.subheader("Danh sách sản phẩm")
         
-        # --- BỘ LỌC ---
+        # --- BỘ LỌC --
         search_query = st.text_input("🔍 Tìm theo Tên hoặc SKU")
         
         # Lọc theo danh mục
@@ -45,18 +45,19 @@ def render_pricing_page():
             format_func=lambda x: cat_options.get(x, "Tất cả")
         )
 
-        # Lọc theo NCC
+        # Lọc theo NCC (Tạm thời vô hiệu hóa)
         sup_options = {sup['id']: sup['name'] for sup in suppliers}
         sup_options['ALL'] = "Tất cả nhà cung cấp"
         selected_sup = st.selectbox(
             "Lọc theo nhà cung cấp", 
             options=['ALL'] + list(sup_options.keys()),
-            format_func=lambda x: sup_options.get(x, "Tất cả")
+            format_func=lambda x: sup_options.get(x, "Tất cả"),
+            disabled=not suppliers # Vô hiệu hóa nếu không có NCC
         )
         
         st.divider()
 
-        # --- HIỂN THỊ DANH SÁCH ---
+        # --- HIỂN THỊ DANH SÁCH --
         filtered_list = master_products
         if search_query:
             search_query = search_query.lower()
@@ -85,8 +86,13 @@ def render_pricing_page():
             st.info("Chọn một sản phẩm từ danh sách bên trái để bắt đầu.")
         else:
             sku = st.session_state.pricing_selected_sku
-            product_info = product_mgr.get_product_master(sku)
+            # Tìm thông tin sản phẩm từ list đã có
+            product_info = next((p for p in master_products if p['sku'] == sku), None)
             
+            if not product_info:
+                st.error(f"Không tìm thấy thông tin sản phẩm cho SKU: {sku}")
+                st.stop()
+
             st.markdown(f"#### **{product_info['name']}** ({sku})")
 
             # --- Chọn chi nhánh ---
@@ -146,11 +152,13 @@ def render_pricing_page():
 
             # --- Hiển thị lịch sử giá ---
             st.markdown("##### Lịch sử thay đổi giá")
-            if not price_history:
-                st.write("Chưa có lịch sử giá cho sản phẩm này tại chi nhánh đã chọn.")
+            schedules = price_mgr.get_price_schedules_for_sku(selected_branch_id, sku) # Lấy cả schedule
+            if not schedules:
+                st.write("Chưa có lịch sử/lịch trình giá cho sản phẩm này tại chi nhánh đã chọn.")
             else:
-                for item in price_history:
+                for item in schedules:
                     start = item['start_date'].strftime('%d-%m-%Y')
                     end = item.get('end_date')
                     end_str = end.strftime('%d-%m-%Y') if end else "Vô hạn"
-                    st.info(f"**{item['new_price']:,.0f} đ** | Từ: {start} | Đến: {end_str} | Trạng thái: {item['status']}")
+                    price_str = f"{item['new_price']:,.0f} đ"
+                    st.info(f"**{price_str}** | Từ: {start} | Đến: {end_str} | **{item['status']}**")
