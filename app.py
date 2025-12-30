@@ -18,17 +18,17 @@ from managers.promotion_manager import PromotionManager
 from managers.cost_manager import CostManager
 from managers.price_manager import PriceManager
 
-# Import UI pages
+# Import UI pages - Cấu trúc mới
 from ui.login_page import render_login
-from ui.products_page import render_product_page
 from ui.pos_page import render_pos_page
 from ui.report_page import render_report_page
 from ui.settings_page import render_settings_page
 from ui.promotions_page import render_promotions_page
-from ui.pricing_page import render_pricing_page
 from ui.cost_page import render_cost_page
 from ui.inventory_page import render_inventory_page
-from ui.user_management_page import render_user_management_page # <<< IMPORT MỚI
+from ui.user_management_page import render_user_management_page
+from ui.product_catalog_page import render_product_catalog_page # <<< MỚI
+from ui.business_products_page import render_business_products_page # <<< MỚI
 
 st.set_page_config(layout="wide")
 
@@ -37,20 +37,20 @@ MENU_PERMISSIONS = {
     "admin": [
         "Báo cáo & Phân tích",
         "Bán hàng (POS)",
+        "Sản phẩm Kinh doanh",
         "Quản lý Kho",
         "Quản lý Chi phí",
-        "Quản lý Sản phẩm",
-        "Thiết lập Giá",
+        "Danh mục Sản phẩm",
         "Quản lý Khuyến mãi",
-        "Quản lý Người dùng", # <<< THÊM MENU MỚI
+        "Quản lý Người dùng",
         "Quản trị Hệ thống",
     ],
     "manager": [
         "Báo cáo & Phân tích",
         "Bán hàng (POS)",
+        "Sản phẩm Kinh doanh",
         "Quản lý Kho",
         "Quản lý Chi phí",
-        "Quản lý Sản phẩm",
     ],
     "staff": [
         "Bán hàng (POS)",
@@ -58,7 +58,7 @@ MENU_PERMISSIONS = {
 }
 
 def init_managers():
-    # ... (Hàm này giữ nguyên, không thay đổi) ...
+    # ... (Hàm này giữ nguyên) ...
     if "firebase" not in st.secrets or "credentials_json" not in st.secrets.firebase:
         st.error("Firebase secrets not found...")
         return False
@@ -93,7 +93,7 @@ def init_managers():
     return True
 
 def display_sidebar():
-    # ... (Hàm này giữ nguyên, không thay đổi) ...
+    # ... (Hàm này giữ nguyên) ...
     user_info = st.session_state.user
     st.sidebar.success(f"Xin chào, {user_info.get('display_name', 'Người dùng')}!")
     role = user_info.get('role', 'staff')
@@ -128,23 +128,25 @@ def main():
     
     page = display_sidebar()
 
-    # Ánh xạ tên menu tới hàm render tương ứng
+    # Ánh xạ tên menu tới hàm render tương ứng (Cấu trúc mới)
     page_renderers = {
         "Bán hàng (POS)": lambda: render_pos_page(st.session_state.pos_mgr),
         "Báo cáo & Phân tích": lambda: render_report_page(st.session_state.report_mgr, st.session_state.branch_mgr, st.session_state.auth_mgr),
-        "Quản lý Sản phẩm": lambda: render_product_page(st.session_state.product_mgr, st.session_state.branch_mgr),
         "Quản lý Kho": lambda: render_inventory_page(st.session_state.inventory_mgr, st.session_state.branch_mgr, st.session_state.product_mgr, st.session_state.auth_mgr),
         "Quản lý Chi phí": lambda: render_cost_page(st.session_state.cost_mgr, st.session_state.branch_mgr, st.session_state.auth_mgr),
-        "Thiết lập Giá": lambda: render_pricing_page(st.session_state.price_mgr, st.session_state.product_mgr, st.session_state.branch_mgr),
         "Quản lý Khuyến mãi": lambda: render_promotions_page(st.session_state.promotion_mgr, st.session_state.product_mgr, st.session_state.branch_mgr),
-        "Quản lý Người dùng": lambda: render_user_management_page(st.session_state.auth_mgr, st.session_state.branch_mgr), # <<< THÊM RENDERER MỚI
+        "Quản lý Người dùng": lambda: render_user_management_page(st.session_state.auth_mgr, st.session_state.branch_mgr),
         "Quản trị Hệ thống": lambda: render_settings_page(st.session_state.settings_mgr),
+        
+        # Menu mới
+        "Danh mục Sản phẩm": lambda: render_product_catalog_page(st.session_state.product_mgr, st.session_state.auth_mgr),
+        "Sản phẩm Kinh doanh": lambda: render_business_products_page(st.session_state.auth_mgr, st.session_state.branch_mgr, st.session_state.product_mgr, st.session_state.price_mgr),
     }
 
     if page in page_renderers:
         page_renderers[page]()
     else:
-        st.warning(f"Trang '{page}' đang trong quá trình phát triển.")
+        st.warning(f"Trang '{page}' đang trong quá trình phát triển hoặc đã bị loại bỏ.")
 
 if __name__ == "__main__":
     main()
