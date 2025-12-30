@@ -15,6 +15,8 @@ from managers.report_manager import ReportManager
 from managers.session_manager import is_session_active, check_remember_me
 from managers.settings_manager import SettingsManager
 from managers.promotion_manager import PromotionManager
+from managers.cost_manager import CostManager
+from managers.price_manager import PriceManager
 
 # Import UI pages
 from ui.login_page import render_login
@@ -23,16 +25,17 @@ from ui.pos_page import render_pos_page
 from ui.report_page import render_report_page
 from ui.settings_page import render_settings_page
 from ui.promotions_page import render_promotions_page
+# Import the new pricing page
+from ui.pricing_page import render_pricing_page
 
 st.set_page_config(layout="wide")
 
 def main():
-    # Check for Firebase credentials
+    # Firebase and Managers Initialization (existing code...)
     if "firebase" not in st.secrets or "credentials_json" not in st.secrets.firebase:
         st.error("Firebase secrets not found...")
         return
 
-    # Initialize Firebase client
     if 'firebase_client' not in st.session_state:
         try:
             creds_dict = json.loads(st.secrets["firebase"]["credentials_json"])
@@ -58,19 +61,26 @@ def main():
         st.session_state.settings_mgr = SettingsManager(st.session_state.firebase_client)
     if 'promotion_mgr' not in st.session_state:
         st.session_state.promotion_mgr = PromotionManager(st.session_state.firebase_client)
+    if 'cost_mgr' not in st.session_state:
+        st.session_state.cost_mgr = CostManager()
+    if 'price_mgr' not in st.session_state:
+        st.session_state.price_mgr = PriceManager(st.session_state.firebase_client)
 
-    # POSManager depends on other managers, so it's initialized last
     if 'pos_mgr' not in st.session_state:
         st.session_state.pos_mgr = POSManager(
             firebase_client=st.session_state.firebase_client,
             inventory_mgr=st.session_state.inventory_mgr,
             customer_mgr=st.session_state.customer_mgr,
-            promotion_mgr=st.session_state.promotion_mgr # Correctly passing the promotion manager
+            promotion_mgr=st.session_state.promotion_mgr, 
+            cost_mgr=st.session_state.cost_mgr,
+            price_mgr=st.session_state.price_mgr
         )
     
-    # Check and initialize database collections if needed
-    st.session_state.promotion_mgr.check_and_initialize()
-
+    # --- RUN BACKGROUND JOBS ---
+    # This is a simple way to run jobs. For a real app, use a scheduled task (e.g., Cloud Functions).
+    st.session_state.price_mgr.run_price_activation_job()
+    st.session_state.promotion_mgr.check_and_initialize() # This job checks for active promotions
+    
     # Session and routing
     if 'user' not in st.session_state:
         if not check_remember_me():
@@ -87,17 +97,23 @@ def main():
     st.sidebar.write(f"Chi nhánh: **{st.session_state.branch_mgr.get_branch(user_info['branch_id'])['name']}**")
     st.sidebar.write(f"Vai trò: **{user_info['role']}**")
 
-    # Menu based on role
+    # --- MENU DEFINITION ---
+    # Thêm "Thiết lập Giá" vào menu
     menu_options = {
-        "ADMIN": ["Bán hàng (POS)", "Báo cáo", "Quản lý Sản phẩm", "Quản lý Khuyến mãi", "Quản lý Kho", "Quản lý Chi nhánh", "Quản trị"],
+        "ADMIN": ["Bán hàng (POS)", "Báo cáo", "Thiết lập Giá", "Quản lý Sản phẩm", "Quản lý Khuyến mãi", "Quản lý Kho", "Quản lý Chi nhánh", "Quản trị"],
+        # STAFF chỉ có thể được xem nếu được cấp quyền sau này
         "STAFF": ["Bán hàng (POS)", "Báo cáo", "Quản lý Kho"]
     }
-    page = st.sidebar.selectbox("Chức năng", menu_options.get(user_info['role'], []))
+    
+    # Lấy danh sách menu dựa trên vai trò của user
+    available_pages = menu_options.get(user_info['role'], [])
+    page = st.sidebar.selectbox("Chức năng", available_pages)
 
-    # Render the selected page
+    # --- PAGE RENDERING ---
     page_renderers = {
         "Bán hàng (POS)": render_pos_page,
         "Báo cáo": render_report_page,
+        "Thiết lập Giá": render_pricing_page, # Thêm renderer cho trang mới
         "Quản lý Sản phẩm": render_product_page,
         "Quản lý Khuyến mãi": render_promotions_page,
         "Quản trị": render_settings_page
