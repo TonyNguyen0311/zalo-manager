@@ -11,7 +11,8 @@ def render_user_management_page(auth_mgr: AuthManager, branch_mgr: BranchManager
 
     # Chỉ Admin mới có quyền truy cập trang này (kiểm tra lại ở đây cho chắc)
     user_info = auth_mgr.get_current_user_info()
-    if not user_info or user_info.get('role') != 'admin':
+    # <<< SỬA LỖI: Chuẩn hóa vai trò về chữ thường trước khi kiểm tra
+    if not user_info or user_info.get('role', '').lower() != 'admin':
         st.error("Truy cập bị từ chối. Chức năng này chỉ dành cho Quản trị viên.")
         return
 

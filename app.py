@@ -102,12 +102,7 @@ def display_sidebar():
     elif branch_ids:
         branch_names = [st.session_state.branch_mgr.get_branch_name(b_id) for b_id in branch_ids]
         st.sidebar.write(f"Chi nhánh: **{', '.join(branch_names)}**")
-    
-    # <<< GIẢI PHÁP TẠM THỜI: Hiển thị mục Quản lý người dùng cho tất cả mọi người
     available_pages = MENU_PERMISSIONS.get(role, [])
-    if "Quản lý Người dùng" not in available_pages:
-        available_pages.append("Quản lý Người dùng")
-
     if not available_pages:
         st.sidebar.warning("Không có chức năng nào được cấp phép.")
     ordered_pages = []
