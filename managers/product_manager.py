@@ -118,9 +118,9 @@ class ProductManager:
         Lấy danh sách các sản phẩm được niêm yết (có giá và active) cho một chi nhánh cụ thể.
         Đây là hàm để sử dụng trên trang POS.
         """
-        # SỬA LỖI: Sử dụng FieldPath để xử lý các ký tự đặc biệt trong branch_id
+        # SỬA LỖI LẦN 2: Truyền trực tiếp FieldPath vào .where() mà không cần bọc bởi FieldFilter
         field_path = FieldPath("price_by_branch", branch_id, "active")
-        query = self.collection.where(filter=firestore.FieldFilter("active", "==", True)).where(filter=firestore.FieldFilter(field_path, "==", True))
+        query = self.collection.where("active", "==", True).where(field_path, "==", True)
         
         results = []
         for doc in query.stream():
