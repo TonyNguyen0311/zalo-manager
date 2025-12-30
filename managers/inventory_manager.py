@@ -9,118 +9,147 @@ class InventoryManager:
         # --- Collections ---
         self.inventory_col = self.db.collection('inventory')
         self.transfers_col = self.db.collection('goods_transfers')
-        self.adjustments_col = self.db.collection('stock_adjustments')
-        self.stock_takes_col = self.db.collection('stock_takes')
-
+        # Collection để ghi lại lịch sử mỗi lần thay đổi tồn kho
+        self.adjustments_col = self.db.collection('inventory_adjustments')
 
     def _get_doc_id(self, sku: str, branch_id: str):
         return f"{sku.upper()}_{branch_id}"
 
     # --------------------------------------------------------------------------
-    # SECTION 1: GOODS TRANSFER (LUÂN CHUYỂN KHO - LOGIC MỚI)
+    # SECTION 1: CÁC HÀM CẬP NHẬT TỒN KHO CHÍNH
     # --------------------------------------------------------------------------
 
-    @firestore.transactional
-    def create_stock_transfer_transaction(self, transaction, from_branch_id, to_branch_id, items, user_id, notes):
-        transfer_id = f"TFR-{uuid.uuid4().hex[:8].upper()}"
-        transfer_ref = self.transfers_col.document(transfer_id)
+    def update_inventory(self, sku: str, branch_id: str, delta: int, transaction: firestore.Transaction):
+        """
+        Hàm lõi, nhận transaction để cập nhật tồn kho. 
+        Delta có thể là số dương (nhập hàng) hoặc âm (bán hàng, hủy hàng).
+        Đây là hàm private vì nó yêu cầu một transaction bên ngoài.
+        """
+        inv_doc_ref = self.inventory_col.document(self._get_doc_id(sku, branch_id))
+        transaction.set(inv_doc_ref, {
+            'stock_quantity': firestore.FieldValue.increment(delta),
+            'last_updated': datetime.now().isoformat(),
+            'sku': sku, 
+            'branch_id': branch_id
+        }, merge=True)
 
-        # 1. Tạo phiếu chuyển kho với trạng thái PENDING
-        transfer_data = {
-            "id": transfer_id,
-            "branch_from_id": from_branch_id,
-            "branch_to_id": to_branch_id,
-            "items": items, # list of {'SKU': str, 'Số lượng': int}
-            "status": "PENDING", # PENDING -> COMPLETED
-            "created_by": user_id,
-            "created_at": datetime.now().isoformat(),
+    @firestore.transactional
+    def _adjust_stock_transaction(self, transaction, sku, branch_id, new_quantity, user_id, reason, notes):
+        """
+        Transaction cho việc điều chỉnh tồn kho (không phải nhập/xuất/bán).
+        Ví dụ: Kiểm kê thấy sai, hàng hỏng...
+        """
+        doc_id = self._get_doc_id(sku, branch_id)
+        inv_ref = self.inventory_col.document(doc_id)
+        inv_snapshot = inv_ref.get(transaction=transaction)
+
+        current_quantity = 0
+        if inv_snapshot.exists:
+            current_quantity = inv_snapshot.to_dict().get('stock_quantity', 0)
+        
+        delta = new_quantity - current_quantity
+
+        if delta == 0:
+            return # Không có gì thay đổi
+
+        # 1. Cập nhật tồn kho hiện tại
+        self.update_inventory(sku, branch_id, delta, transaction)
+
+        # 2. Ghi lại lịch sử điều chỉnh
+        adj_id = f"ADJ-{uuid.uuid4().hex[:8].upper()}"
+        adj_ref = self.adjustments_col.document(adj_id)
+        transaction.set(adj_ref, {
+            "id": adj_id,
+            "sku": sku,
+            "branch_id": branch_id,
+            "user_id": user_id,
+            "timestamp": datetime.now().isoformat(),
+            "quantity_before": current_quantity,
+            "quantity_after": new_quantity,
+            "delta": delta,
+            "reason": reason, # Ví dụ: 'STOCK_TAKE', 'DAMAGED_GOODS', 'MANUAL_CORRECTION'
             "notes": notes
-        }
-        transaction.set(transfer_ref, transfer_data)
-
-        # 2. Cập nhật tồn kho ở chi nhánh GỬI
-        for item in items:
-            sku = item['SKU']
-            quantity = item['Số lượng']
-            inv_doc_ref = self.inventory_col.document(self._get_doc_id(sku, from_branch_id))
-            
-            # Giảm tồn kho thực tế, tăng tồn kho "đang chuyển đi"
-            transaction.set(inv_doc_ref, {
-                'stock_quantity': firestore.FieldValue.increment(-quantity),
-                'outgoing_quantity': firestore.FieldValue.increment(quantity),
-                'last_updated': datetime.now().isoformat(),
-                'sku': sku, 
-                'branch_id': from_branch_id
-            }, merge=True)
-
-    def create_stock_transfer(self, from_branch_id, to_branch_id, items, user_id, notes):
-        # Hàm wrapper để gọi transaction
-        transaction = self.db.transaction()
-        self.create_stock_transfer_transaction(transaction, from_branch_id, to_branch_id, items, user_id, notes)
-
-    @firestore.transactional
-    def confirm_stock_transfer_transaction(self, transaction, transfer_id, user_id):
-        transfer_ref = self.transfers_col.document(transfer_id)
-        transfer_snapshot = transfer_ref.get(transaction=transaction).to_dict()
-
-        if transfer_snapshot['status'] != 'PENDING':
-            raise Exception("Phiếu này không ở trạng thái chờ xác nhận.")
-
-        # 1. Cập nhật trạng thái phiếu thành COMPLETED
-        transaction.update(transfer_ref, {
-            "status": "COMPLETED",
-            "received_by": user_id,
-            "received_at": datetime.now().isoformat()
         })
 
-        branch_from_id = transfer_snapshot['branch_from_id']
-        branch_to_id = transfer_snapshot['branch_to_id']
-        items = transfer_snapshot['items']
+    @firestore.transactional
+    def _receive_stock_transaction(self, transaction, sku, branch_id, quantity, user_id, notes, cost_price, supplier):
+        """
+        Transaction cho việc nhập hàng từ nhà cung cấp.
+        """
+        if quantity <= 0:
+            raise ValueError("Số lượng nhập phải lớn hơn 0.")
 
-        # 2. Cập nhật tồn kho ở cả 2 chi nhánh
-        for item in items:
-            sku = item['SKU']
-            quantity = item['Số lượng']
+        current_quantity = 0
+        inv_ref = self.inventory_col.document(self._get_doc_id(sku, branch_id))
+        inv_snapshot = inv_ref.get(transaction=transaction)
+        if inv_snapshot.exists:
+            current_quantity = inv_snapshot.to_dict().get('stock_quantity', 0)
 
-            # 2a. Chi nhánh GỬI: giảm số lượng "đang chuyển đi"
-            from_inv_ref = self.inventory_col.document(self._get_doc_id(sku, branch_from_id))
-            transaction.update(from_inv_ref, {
-                'outgoing_quantity': firestore.FieldValue.increment(-quantity),
-                'last_updated': datetime.now().isoformat()
-            })
+        # 1. Cập nhật tồn kho (tăng lên)
+        self.update_inventory(sku, branch_id, quantity, transaction)
 
-            # 2b. Chi nhánh NHẬN: tăng tồn kho thực tế
-            to_inv_ref = self.inventory_col.document(self._get_doc_id(sku, branch_to_id))
-            transaction.set(to_inv_ref, {
-                'stock_quantity': firestore.FieldValue.increment(quantity),
-                'last_updated': datetime.now().isoformat(),
-                'sku': sku,
-                'branch_id': branch_to_id
-            }, merge=True)
+        # 2. Ghi lại lịch sử nhập hàng
+        adj_id = f"GRN-{uuid.uuid4().hex[:8].upper()}" # Goods Received Note
+        adj_ref = self.adjustments_col.document(adj_id)
+        transaction.set(adj_ref, {
+            "id": adj_id,
+            "sku": sku,
+            "branch_id": branch_id,
+            "user_id": user_id,
+            "timestamp": datetime.now().isoformat(),
+            "quantity_before": current_quantity,
+            "quantity_after": current_quantity + quantity,
+            "delta": quantity,
+            "reason": "GOODS_RECEIVED",
+            "notes": notes,
+            "cost_price_per_unit": cost_price, 
+            "total_cost": cost_price * quantity,
+            "supplier": supplier
+        })
 
-    def confirm_stock_transfer(self, transfer_id, user_id):
-        # Hàm wrapper để gọi transaction
+    def adjust_stock(self, sku, branch_id, new_quantity, user_id, reason, notes):
+        """Hàm public để gọi transaction điều chỉnh kho."""
         transaction = self.db.transaction()
-        self.confirm_stock_transfer_transaction(transaction, transfer_id, user_id)
+        self._adjust_stock_transaction(transaction, sku, branch_id, new_quantity, user_id, reason, notes)
 
-    def get_pending_transfers_to_branches(self, branch_ids: list):
-        """Lấy các phiếu đang ở trạng thái PENDING và đi đến các chi nhánh được chỉ định."""
-        if not branch_ids:
-            return []
-        query = self.transfers_col.where("status", "==", "PENDING").where("branch_to_id", "in", branch_ids)
-        return [doc.to_dict() for doc in query.order_by("created_at", direction=firestore.Query.DESCENDING).stream()]
-
+    def receive_stock(self, sku, branch_id, quantity, user_id, cost_price, supplier, notes=""):
+        """Hàm public để gọi transaction nhập hàng."""
+        transaction = self.db.transaction()
+        self._receive_stock_transaction(transaction, sku, branch_id, quantity, user_id, notes, cost_price, supplier)
 
     # --------------------------------------------------------------------------
-    # SECTION 2: CÁC HÀM KHÁC (giữ nguyên để tham khảo)
+    # SECTION 2: CÁC HÀM TRUY VẤN (giữ nguyên và bổ sung)
     # --------------------------------------------------------------------------
-    def get_stock(self, sku: str, branch_id: str):
+    def get_stock_quantity(self, sku: str, branch_id: str) -> int:
+        """Lấy số lượng tồn kho thực tế của một sản phẩm tại một chi nhánh."""
         doc_id = self._get_doc_id(sku, branch_id)
         doc = self.inventory_col.document(doc_id).get()
         if doc.exists:
             return doc.to_dict().get('stock_quantity', 0)
         return 0
 
-    def get_inventory_by_branch(self, branch_id: str):
+    def get_inventory_by_branch(self, branch_id: str) -> dict:
+        """Lấy toàn bộ thông tin tồn kho của một chi nhánh, trả về dict với key là SKU."""
         docs = self.inventory_col.where('branch_id', '==', branch_id).stream()
-        return {doc.to_dict()['sku']: doc.to_dict() for doc in docs}
+        # Bổ sung thông tin ngưỡng tồn kho
+        inventory_data = {}
+        for doc in docs:
+            data = doc.to_dict()
+            # Giả định ngưỡng tồn kho được lưu cùng document, sẽ thêm ở bước sau
+            data['low_stock_threshold'] = data.get('low_stock_threshold', 10) 
+            inventory_data[data['sku']] = data
+        return inventory_data
+        
+    def get_inventory_adjustments_history(self, sku: str = None, branch_id: str = None, start_date=None, end_date=None, limit=50):
+        """Lấy lịch sử các lần thay đổi tồn kho."""
+        query = self.adjustments_col
+        if sku:
+            query = query.where("sku", "==", sku)
+        if branch_id:
+            query = query.where("branch_id", "==", branch_id)
+        if start_date:
+            query = query.where("timestamp", ">=", start_date.isoformat())
+        if end_date:
+            query = query.where("timestamp", "<=", end_date.isoformat())
+            
+        return [doc.to_dict() for doc in query.order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit).stream()]

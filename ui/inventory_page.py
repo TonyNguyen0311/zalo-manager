@@ -1,178 +1,155 @@
 
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Import managers
 from managers.inventory_manager import InventoryManager
-from managers.branch_manager import BranchManager
 from managers.product_manager import ProductManager
+from managers.branch_manager import BranchManager
 from managers.auth_manager import AuthManager
 
-def render_inventory_page(inv_mgr: InventoryManager, branch_mgr: BranchManager, prod_mgr: ProductManager, auth_mgr: AuthManager):
-    st.header("📦 Quản lý Kho")
+def render_inventory_page(inv_mgr: InventoryManager, prod_mgr: ProductManager, branch_mgr: BranchManager, auth_mgr: AuthManager):
+    st.header("Quản lý Tồn kho")
 
+    # --- 1. LẤY THÔNG TIN & PHÂN QUYỀN ---
     user_info = auth_mgr.get_current_user_info()
     if not user_info:
-        st.error("Vui lòng đăng nhập.")
+        st.error("Vui lòng đăng nhập để sử dụng chức năng này.")
         return
-
-    # --- LOGIC PHÂN QUYỀN ---
 
     user_role = user_info.get('role', 'staff')
-    if user_role not in ['admin', 'manager']:
-        st.warning("Bạn không có quyền truy cập vào chức năng này.")
-        return
-
     user_branches = user_info.get('branch_ids', [])
-    all_branches_list = branch_mgr.get_branches()
-    all_branches_map = {b['id']: b['name'] for b in all_branches_list}
-    
+    all_branches_map = {b['id']: b['name'] for b in branch_mgr.get_branches()}
+
     allowed_branches_map = {}
     if user_role == 'admin':
         allowed_branches_map = all_branches_map
-    else: # manager
+        default_branch_selection = list(allowed_branches_map.keys())[0] if allowed_branches_map else None
+    else:
+        if not user_branches:
+            st.warning("Tài khoản của bạn chưa được gán vào chi nhánh nào.")
+            return
         allowed_branches_map = {branch_id: all_branches_map[branch_id] for branch_id in user_branches if branch_id in all_branches_map}
+        default_branch_selection = user_branches[0]
 
     if not allowed_branches_map:
-        st.warning("Tài khoản của bạn chưa được gán vào chi nhánh nào. Vui lòng liên hệ Admin.")
+        st.warning("Không có chi nhánh nào để quản lý.")
         return
 
-    product_list = prod_mgr.list_products()
-    product_map = {p['sku']: p for p in product_list}
-    product_sku_list = [p['sku'] for p in product_list]
+    # --- 2. BỘ LỌC CHI NHÁNH ---
+    if len(allowed_branches_map) > 1:
+        selected_branch = st.selectbox("Chọn chi nhánh để xem kho", options=list(allowed_branches_map.keys()), format_func=lambda x: allowed_branches_map[x], index=list(allowed_branches_map.keys()).index(default_branch_selection))
+    else:
+        selected_branch = default_branch_selection
+        st.text_input("Chi nhánh", value=allowed_branches_map[selected_branch], disabled=True)
+    st.divider()
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "🚚 Luân chuyển hàng hóa",
-        "📥 Nhập kho (từ NCC)",
-        "📤 Xuất/Hủy kho",
-        "📋 Kiểm kê kho"
-    ])
+    # --- 3. CẤU TRÚC TAB ---
+    tab1, tab2, tab3 = st.tabs(["📊 Tình hình Tồn kho", "📥 Nhập hàng", "📜 Lịch sử Thay đổi"])
 
-    # --- TAB 1: LUÂN CHUYỂN HÀNG HÓA ---
+    # Tải dữ liệu cần thiết một lần
+    branch_inventory = inv_mgr.get_inventory_by_branch(selected_branch)
+    all_products = prod_mgr.list_products() # Lấy tất cả sản phẩm để map thông tin
+    product_map = {p['sku']: p for p in all_products if 'sku' in p}
 
+    # =========================================================
+    # TAB 1: TÌNH HÌNH TỒN KHO
+    # =========================================================
     with tab1:
-        st.subheader("Tạo Phiếu Chuyển Kho")
-        with st.form("stock_transfer_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                branch_from_id = st.selectbox(
-                    "Từ Chi nhánh",
-                    options=list(allowed_branches_map.keys()),
-                    format_func=lambda x: allowed_branches_map[x],
-                    key="transfer_from"
-                )
-            with col2:
-                # Lọc chi nhánh nhận không được trùng chi nhánh gửi
-                available_to_branches = {k: v for k, v in all_branches_map.items() if k != branch_from_id}
-                branch_to_id = st.selectbox(
-                    "Đến Chi nhánh",
-                    options=list(available_to_branches.keys()),
-                    format_func=lambda x: available_to_branches[x],
-                    key="transfer_to"
-                )
+        st.subheader(f"Tồn kho hiện tại của: {allowed_branches_map[selected_branch]}")
 
-            st.write("Thêm sản phẩm cần chuyển:")
-            
-            # Sử dụng st.data_editor để thêm sản phẩm
-            if 'transfer_items' not in st.session_state:
-                st.session_state.transfer_items = pd.DataFrame([{"SKU": None, "Số lượng": 1}])
-
-            edited_df = st.data_editor(
-                st.session_state.transfer_items,
-                num_rows="dynamic",
-                use_container_width=True,
-                column_config={
-                    "SKU": st.column_config.SelectboxColumn(
-                        "SKU",
-                        help="Chọn mã sản phẩm (SKU)",
-                        options=product_sku_list,
-                        required=True
-                    ),
-                    "Số lượng": st.column_config.NumberColumn(
-                        "Số lượng",
-                        min_value=1,
-                        step=1,
-                        required=True
-                    )
-                }
-            )
-
-            notes = st.text_area("Ghi chú")
-            
-            submitted = st.form_submit_button("Tạo Phiếu")
-            if submitted:
-                # Validate dữ liệu
-                if branch_from_id == branch_to_id:
-                    st.error("Chi nhánh gửi và nhận không được trùng nhau.")
-                elif edited_df.isnull().values.any():
-                    st.error("Vui lòng điền đầy đủ thông tin SKU và số lượng.")
-                else:
-                    items_to_transfer = edited_df.to_dict('records')
-                    try:
-                        # Gọi hàm manager để tạo phiếu (sẽ được implement sau)
-                        inv_mgr.create_stock_transfer(
-                            branch_from_id, 
-                            branch_to_id, 
-                            items_to_transfer, 
-                            user_info['uid'], 
-                            notes
-                        )
-                        st.success(f"Đã tạo phiếu chuyển kho từ '{allowed_branches_map[branch_from_id]}' đến '{all_branches_map[branch_to_id]}' thành công!")
-                        # Reset dataframe
-                        st.session_state.transfer_items = pd.DataFrame([{"SKU": None, "Số lượng": 1}])
-                    except Exception as e:
-                        st.error(f"Lỗi khi tạo phiếu: {e}")
-
-        st.divider()
-
-        st.subheader("Các Phiếu Chờ Xác Nhận")
-        # Chỉ lấy các phiếu đang chờ mà chi nhánh đích nằm trong quyền của user
-        pending_transfers = inv_mgr.get_pending_transfers_to_branches(list(allowed_branches_map.keys()))
-
-        if not pending_transfers:
-            st.info("Không có phiếu chuyển kho nào đang chờ xác nhận tại chi nhánh của bạn.")
+        if not branch_inventory:
+            st.info("Chưa có sản phẩm nào trong kho của chi nhánh này.")
         else:
-            for transfer in pending_transfers:
-                transfer_id = transfer['id']
-                from_name = all_branches_map.get(transfer['branch_from_id'], "N/A")
-                to_name = all_branches_map.get(transfer['branch_to_id'], "N/A")
-                
-                with st.expander(f"Phiếu #{transfer_id} | Từ: {from_name} | Ngày: {transfer['created_at'][:10]}"):
-                    st.write(f"**Ghi chú:** {transfer.get('notes', 'Không có')}")
-                    
-                    items_df = pd.DataFrame(transfer['items'])
-                    # Join với thông tin sản phẩm để hiển thị tên
-                    items_df['Tên sản phẩm'] = items_df['SKU'].map(lambda sku: product_map.get(sku, {}).get('name', 'Không rõ'))
-                    st.dataframe(items_df[['SKU', 'Tên sản phẩm', 'Số lượng']], use_container_width=True)
+            inventory_list = []
+            for sku, inv_data in branch_inventory.items():
+                prod_info = product_map.get(sku, {})
+                quantity = inv_data.get('stock_quantity', 0)
+                threshold = inv_data.get('low_stock_threshold', 10)
+                status = "Hết hàng" if quantity <= 0 else ("Sắp hết" if quantity < threshold else "Còn hàng")
 
-                    if st.button("Xác Nhận Đã Nhận Đủ Hàng", key=f"confirm_{transfer_id}"):
-                        try:
-                            # Gọi hàm manager để xác nhận (sẽ được implement sau)
-                            inv_mgr.confirm_stock_transfer(transfer_id, user_info['uid'])
-                            st.success(f"Đã xác nhận thành công phiếu #{transfer_id}!")
-                            st.experimental_rerun() # Tải lại trang để cập nhật danh sách
-                        except Exception as e:
-                            st.error(f"Lỗi khi xác nhận: {e}")
+                inventory_list.append({
+                    'Tên sản phẩm': prod_info.get('name', f'Không rõ (SKU: {sku})'),
+                    'SKU': sku,
+                    'Số lượng': quantity,
+                    'Trạng thái': status
+                })
+            
+            inventory_df = pd.DataFrame(inventory_list)
 
+            # Highlight các dòng sắp hết hoặc hết hàng
+            def highlight_status(row):
+                if row['Trạng thái'] == 'Hết hàng':
+                    return ['background-color: #FFC7CE'] * len(row)
+                elif row['Trạng thái'] == 'Sắp hết':
+                    return ['background-color: #FFEB9C'] * len(row)
+                return [''] * len(row)
 
-    # --- TAB 2: NHẬP KHO ---
+            st.dataframe(inventory_df.style.apply(highlight_status, axis=1), use_container_width=True, hide_index=True)
 
+    # =========================================================
+    # TAB 2: NHẬP HÀNG
+    # =========================================================
     with tab2:
-        # Giữ nguyên logic cũ
-        st.info("Chức năng đang được phát triển")
-        pass
+        st.subheader("Tạo Phiếu Nhập hàng")
+        
+        # Form nhập hàng
+        with st.form("receive_stock_form", clear_on_submit=True):
+            product_options = {p['sku']: f"{p['name']} ({p['sku']})" for p in all_products if 'sku' in p}
+            selected_sku = st.selectbox("Chọn sản phẩm", options=list(product_options.keys()), format_func=lambda x: product_options[x])
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                quantity = st.number_input("Số lượng nhập", min_value=1, step=1)
+            with c2:
+                cost_price = st.number_input("Giá nhập (trên 1 đơn vị)", min_value=0, step=1000)
 
-    # --- TAB 3: XUẤT HỦY KHO ---
+            supplier = st.text_input("Nhà cung cấp (tùy chọn)")
+            notes = st.text_area("Ghi chú (tùy chọn)")
 
+            submitted = st.form_submit_button("Xác nhận Nhập hàng", type="primary")
+
+        if submitted:
+            if not selected_sku:
+                st.warning("Vui lòng chọn một sản phẩm.")
+            else:
+                try:
+                    with st.spinner("Đang xử lý..."):
+                        inv_mgr.receive_stock(
+                            sku=selected_sku,
+                            branch_id=selected_branch,
+                            quantity=quantity,
+                            user_id=user_info['id'],
+                            cost_price=cost_price,
+                            supplier=supplier,
+                            notes=notes
+                        )
+                    st.success(f"Nhập hàng thành công cho sản phẩm {product_options[selected_sku]}.")
+                    # Có thể thêm st.rerun() để cập nhật ngay lập tức các tab khác
+                except Exception as e:
+                    st.error(f"Đã xảy ra lỗi: {e}")
+
+    # =========================================================
+    # TAB 3: LỊCH SỬ THAY ĐỔI
+    # =========================================================
     with tab3:
-        # Giữ nguyên logic cũ
-        st.info("Chức năng đang được phát triển")
-        pass
+        st.subheader("Lịch sử Nhập/Xuất/Điều chỉnh Kho")
+        with st.spinner("Đang tải lịch sử..."):
+            history = inv_mgr.get_inventory_adjustments_history(branch_id=selected_branch, limit=100)
 
-    # --- TAB 4: KIỂM KÊ KHO ---
-
-    with tab4:
-        # Giữ nguyên logic cũ
-        st.info("Chức năng đang được phát triển")
-        pass
+        if not history:
+            st.info("Chưa có lịch sử thay đổi nào cho chi nhánh này.")
+        else:
+            history_df = pd.DataFrame(history)
+            # Xử lý để hiển thị thông tin dễ đọc hơn
+            history_df['Sản phẩm'] = history_df['sku'].map(lambda s: product_map.get(s, {}).get('name', s))
+            history_df['Thời gian'] = pd.to_datetime(history_df['timestamp']).dt.strftime('%d/%m/%Y %H:%M')
+            history_df.rename(columns={
+                'delta': 'Thay đổi',
+                'quantity_before': 'Tồn trước',
+                'quantity_after': 'Tồn sau',
+                'reason': 'Lý do',
+                'notes': 'Ghi chú'
+            }, inplace=True)
+            st.dataframe(history_df[['Thời gian', 'Sản phẩm', 'Thay đổi', 'Tồn trước', 'Tồn sau', 'Lý do', 'Ghi chú']], use_container_width=True, hide_index=True)
