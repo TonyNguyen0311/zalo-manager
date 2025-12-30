@@ -13,45 +13,35 @@ def render_login_page(auth_mgr: AuthManager, branch_mgr: BranchManager):
         # ======== TẠM THỜI HIỂN THỊ FORM KHỞI TẠO ========
         st.warning("⚠️ Chế độ thiết lập Admin tạm thời. Vui lòng tạo tài khoản Admin mới.")
         with st.form("setup_form"):
-            st.subheader("1. Tạo Chi Nhánh Chính (có thể bỏ qua nếu đã có)")
-            br_name = st.text_input("Tên chi nhánh", "Cửa hàng Chính")
-            br_addr = st.text_input("Địa chỉ", "Hà Nội")
-            br_phone = st.text_input("Số điện thoại", "")
-            
-            st.subheader("2. Tạo Tài khoản Admin Mới")
+            st.subheader("Tạo Tài khoản Admin Mới")
             adm_user = st.text_input("Username mới", "admin")
-            adm_pass = st.text_input("Password mới", type="password")
+            adm_pass = st.text_input("Password mới (ít nhất 6 ký tự)", type="password")
             adm_name = st.text_input("Tên hiển thị", "Quản trị viên")
             
             submitted = st.form_submit_button("Khởi tạo Admin")
             
             if submitted:
-                if not all([br_name, br_addr, adm_user, adm_pass, adm_name]):
-                    st.error("Vui lòng nhập đủ thông tin cho Admin và Chi nhánh.")
+                if len(adm_pass) < 6:
+                    st.error("Mật khẩu phải có ít nhất 6 ký tự.")
+                elif not all([adm_user, adm_pass, adm_name]):
+                    st.error("Vui lòng nhập đủ thông tin cho tài khoản Admin.")
                 else:
                     try:
-                        # Tạo chi nhánh nếu chưa có
-                        if not branch_mgr.get_branches():
-                            branch_id = branch_mgr.create_branch(br_name, br_addr, br_phone)
-                            st.info(f"Đã tạo chi nhánh '{br_name}'.")
-                        else:
-                            # Lấy chi nhánh đầu tiên làm mặc định
-                            branch_id = branch_mgr.get_branches()[0]['id']
-
-                        # Tạo user mới
+                        # FIX: Admin user does not need a specific branch.
+                        # The role 'admin' grants access to all branches.
                         user_data = {
                             "username": adm_user,
                             "display_name": adm_name,
                             "role": "admin",
-                            "branch_ids": [branch_id] # Gán user vào chi nhánh
+                            "branch_ids": [] # Empty list for admin
                         }
                         auth_mgr.create_user_record(user_data, adm_pass)
-                        st.success(f"🎉 Đã tạo thành công tài khoản admin '{adm_user}'. Vui lòng tải lại trang và đăng nhập.")
+                        st.success(f"🎉 Đã tạo thành công tài khoản admin '{adm_user}'. Vui lòng tải lại trang và đăng nhập bằng form bên dưới.")
                         st.balloons()
                     except ValueError as e:
                         st.error(f"Lỗi: {e}")
                     except Exception as e:
-                        st.error(f"Đã có lỗi xảy ra: {e}")
+                        st.error(f"Đã có lỗi xảy ra khi tạo tài khoản: {e}")
 
         st.divider()
         # ==========================================================
