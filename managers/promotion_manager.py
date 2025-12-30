@@ -12,6 +12,16 @@ class PromotionManager:
         self.db = firebase_client.db
         self.collection_ref = self.db.collection('promotions')
 
+    def get_all_promotions(self):
+        """Returns a list of all promotions, ordered by creation time."""
+        query = self.collection_ref.order_by("created_at", direction=firestore.Query.DESCENDING)
+        results = []
+        for doc in query.stream():
+            data = doc.to_dict()
+            data['id'] = doc.id
+            results.append(data)
+        return results
+
     def get_active_price_program(self):
         """
         Finds the highest-priority, active price program for the current time.
@@ -68,7 +78,8 @@ class PromotionManager:
               "constraints": {
                   "min_margin_floor_percent": 10,
                   "per_line_cap_vnd": 500000
-              }
+              },
+              "created_at": datetime.now(timezone.utc).isoformat()
             }
             self.collection_ref.add(sample_price_program)
             st.success("✅ Khởi tạo dữ liệu mẫu cho 'promotions' thành công!")

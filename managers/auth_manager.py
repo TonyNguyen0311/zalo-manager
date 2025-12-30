@@ -23,10 +23,7 @@ class AuthManager:
         if 'user' in st.session_state and st.session_state.user is not None:
             return True
 
-        try:
-            id_token = st.experimental_get_query_params().get('idToken', [None])[0]
-        except (AttributeError, KeyError):
-            id_token = None
+        id_token = st.query_params.get('idToken')
 
         if not id_token:
             return False
@@ -42,10 +39,10 @@ class AuthManager:
                 st.session_state['user'] = user_data
                 return True
             else:
-                st.experimental_set_query_params(idToken=None)
+                st.query_params.clear()
                 return False
         except Exception as e:
-            st.experimental_set_query_params(idToken=None)
+            st.query_params.clear()
             return False
 
     def login(self, username, password):
@@ -57,7 +54,7 @@ class AuthManager:
             user = self.auth.sign_in_with_email_and_password(email, password)
             uid = user['localId']
             id_token = user['idToken']
-            st.experimental_set_query_params(idToken=id_token)
+            st.query_params['idToken'] = id_token
             
             user_doc = self.users_col.document(uid).get()
             if user_doc.exists:
@@ -104,7 +101,7 @@ class AuthManager:
     def logout(self):
         if 'user' in st.session_state:
             del st.session_state['user']
-        st.experimental_set_query_params(idToken=None)
+        st.query_params.clear()
         st.rerun()
 
     def get_current_user_info(self):

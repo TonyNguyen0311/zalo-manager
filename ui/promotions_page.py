@@ -73,7 +73,7 @@ def render_promotions_page(promotion_mgr: PromotionManager, product_mgr: Product
             success, message = promotion_mgr.create_promotion(form_data)
             if success:
                 st.success(f"Đã lưu thành công chương trình: '{promo_name}'")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error(f"Lỗi khi lưu: {message}")
 
@@ -94,7 +94,7 @@ def render_promotions_page(promotion_mgr: PromotionManager, product_mgr: Product
             return f"Danh mục: {', '.join(names)}"
         return "Không xác định"
 
-    promotions = promotion_mgr.list_promotions()
+    promotions = promotion_mgr.get_all_promotions()
     if not promotions:
         st.info("Chưa có chương trình khuyến mãi nào được tạo.")
     else:
@@ -121,8 +121,8 @@ def render_promotions_page(promotion_mgr: PromotionManager, product_mgr: Product
                     if is_active:
                         if st.button("🔴 Tắt", key=f"deact_{promo['id']}", use_container_width=True):
                             promotion_mgr.update_promotion_status(promo['id'], False)
-                            st.experimental_rerun()
+                            st.rerun()
                     else:
                         if st.button("🟢 Kích hoạt", key=f"act_{promo['id']}", use_container_width=True, type="primary"):
                             promotion_mgr.update_promotion_status(promo['id'], True)
-                            st.experimental_rerun()
+                            st.rerun()
