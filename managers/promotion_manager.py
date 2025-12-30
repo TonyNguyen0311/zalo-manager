@@ -56,3 +56,59 @@ class PromotionManager:
         except Exception as e:
             st.error(f"Lỗi khi tạo chương trình khuyến mãi: {e}")
             return False, str(e)
+
+    def simulate_price_program_impact(self, promo_data, product_manager):
+        """
+        Simulates the impact of a price program on all products.
+        """
+        all_products = product_manager.get_all_products_with_cost()
+        simulation_results = []
+
+        # Extract promotion rules
+        auto_discount_percent = promo_data.get('rules', {}).get('auto_discount', {}).get('value', 0)
+        manual_extra_percent = promo_data.get('rules', {}).get('manual_extra_limit', {}).get('value', 0)
+        min_margin_floor = promo_data.get('constraints', {}).get('min_margin_floor_percent', 0)
+
+        for product in all_products:
+            original_price = product.get('price_default') or 0
+            cost_price = product.get('cost_price') or 0
+
+            if original_price == 0:
+                continue # Skip products without a price
+
+            # --- Calculations ---
+            original_margin_vnd = original_price - cost_price
+            original_margin_percent = (original_margin_vnd / original_price * 100) if original_price > 0 else 0
+
+            # After auto discount
+            price_after_auto = original_price * (1 - auto_discount_percent / 100)
+            auto_margin_vnd = price_after_auto - cost_price
+            auto_margin_percent = (auto_margin_vnd / price_after_auto * 100) if price_after_auto > 0 else 0
+
+            # After max manual discount
+            total_discount_percent = auto_discount_percent + manual_extra_percent
+            price_after_manual_max = original_price * (1 - total_discount_percent / 100)
+            manual_max_margin_vnd = price_after_manual_max - cost_price
+            manual_max_margin_percent = (manual_max_margin_vnd / price_after_manual_max * 100) if price_after_manual_max > 0 else 0
+
+            # --- Warnings ---
+            warnings = []
+            if auto_margin_percent < min_margin_floor:
+                warnings.append(f"Lợi nhuận sau giảm tự động ({auto_margin_percent:.1f}%) thấp hơn ngưỡng ({min_margin_floor}%)")
+            if manual_max_margin_percent < min_margin_floor:
+                warnings.append(f"Lợi nhuận sau giảm tối đa ({manual_max_margin_percent:.1f}%) thấp hơn ngưỡng ({min_margin_floor}%)")
+            
+            simulation_results.append({
+                "sku": product.get('sku'),
+                "name": product.get('name'),
+                "cost_price": cost_price,
+                "original_price": original_price,
+                "original_margin_percent": original_margin_percent,
+                "price_after_auto": price_after_auto,
+                "auto_margin_percent": auto_margin_percent,
+                "price_after_manual_max": price_after_manual_max,
+                "manual_max_margin_percent": manual_max_margin_percent,
+                "warnings": warnings
+            })
+
+        return simulation_results

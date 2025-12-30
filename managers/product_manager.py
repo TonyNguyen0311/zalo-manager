@@ -121,3 +121,22 @@ class ProductManager:
             
     def delete_product(self, sku):
         self.collection.document(sku).update({"active": False})
+
+    def get_all_products_with_cost(self):
+        """
+        Retrieves all active products with essential data for simulation.
+        """
+        query = self.collection.where("active", "==", True)
+        docs = query.stream()
+        results = []
+        for doc in docs:
+            d = doc.to_dict()
+            product_data = {
+                'sku': doc.id,
+                'name': d.get('name'),
+                'price_default': d.get('price_default'),
+                'price_by_branch': d.get('price_by_branch', {}),
+                'cost_price': d.get('cost_price', 0) # Default cost to 0 if not set
+            }
+            results.append(product_data)
+        return results
