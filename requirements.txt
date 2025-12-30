@@ -1,8 +1,7 @@
 streamlit
-google-cloud-firestore
 firebase-admin
 bcrypt
 pandas
 plotly
-pyrebase3
+pyrebase4
 setuptools
