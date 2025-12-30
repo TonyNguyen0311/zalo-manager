@@ -118,7 +118,7 @@ def render_product_page():
 
         # HIỂN THỊ DANH SÁCH
         st.divider()
-        products = prod_mgr.get_all_products()
+        products = prod_mgr.list_products()
         
         if products:
             df_data = []
