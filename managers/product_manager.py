@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 import streamlit as st
 from google.cloud import firestore
+from google.cloud.firestore_v1.field_path import FieldPath
 
 class ProductManager:
     def __init__(self, firebase_client):
@@ -66,7 +67,6 @@ class ProductManager:
             
         cat_ref = self.cat_col.document(product_data['category_id'])
 
-        # Định nghĩa hàm transaction nội bộ
         @firestore.transactional
         def run_transaction(transaction, cat_ref, data):
             snapshot = cat_ref.get(transaction=transaction)
@@ -81,15 +81,11 @@ class ProductManager:
             new_sku = f"{prefix}-{new_seq:04d}"
             
             prod_ref = self.collection.document(new_sku)
-            # Check tồn tại (optional)
             if prod_ref.get(transaction=transaction).exists:
-                 # Nếu xui xẻo trùng, ta có thể thử cộng thêm 1, nhưng ở đây cứ báo lỗi để retry
                 raise Exception(f"SKU {new_sku} bị trùng. Vui lòng thử lại.")
 
-            # Update seq
             transaction.update(cat_ref, {"current_seq": new_seq})
 
-            # Create product
             data['sku'] = new_sku
             data['created_at'] = datetime.now().isoformat()
             data['active'] = True
@@ -97,7 +93,6 @@ class ProductManager:
             transaction.set(prod_ref, data)
             return new_sku
 
-        # Chạy transaction
         transaction = self.db.transaction()
         try:
             sku = run_transaction(transaction, cat_ref, product_data)
@@ -109,7 +104,6 @@ class ProductManager:
         self.collection.document(sku).update(updates)
 
     def list_products(self, filters: dict | None = None):
-        # TODO: Implement filtering based on the 'filters' dictionary
         query = self.collection.where("active", "==", True)
         docs = query.stream()
         results = []
@@ -124,8 +118,9 @@ class ProductManager:
         Lấy danh sách các sản phẩm được niêm yết (có giá và active) cho một chi nhánh cụ thể.
         Đây là hàm để sử dụng trên trang POS.
         """
-        field_path = f"price_by_branch.{branch_id}.active"
-        query = self.collection.where("active", "==", True).where(field_path, "==", True)
+        # SỬA LỖI: Sử dụng FieldPath để xử lý các ký tự đặc biệt trong branch_id
+        field_path = FieldPath("price_by_branch", branch_id, "active")
+        query = self.collection.where(filter=firestore.FieldFilter("active", "==", True)).where(filter=firestore.FieldFilter(field_path, "==", True))
         
         results = []
         for doc in query.stream():
@@ -151,7 +146,7 @@ class ProductManager:
                 'name': d.get('name'),
                 'price_default': d.get('price_default'),
                 'price_by_branch': d.get('price_by_branch', {}),
-                'cost_price': d.get('cost_price', 0) # Default cost to 0 if not set
+                'cost_price': d.get('cost_price', 0)
             }
             results.append(product_data)
         return results
