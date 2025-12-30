@@ -17,7 +17,7 @@ from managers.cost_manager import CostManager
 from managers.price_manager import PriceManager
 
 # Import UI pages
-from ui.login_page import render_login_page # FIX: Correct import name
+from ui.login_page import render_login_page
 from ui.pos_page import render_pos_page
 from ui.report_page import render_report_page
 from ui.settings_page import render_settings_page
@@ -45,31 +45,48 @@ MENU_PERMISSIONS = {
 }
 
 def init_managers():
-    if "firebase" not in st.secrets or "credentials_json" not in st.secrets.firebase or "pyrebase_config" not in st.secrets.firebase:
-        st.error("Firebase secrets (credentials_json or pyrebase_config) not found...")
-        return False
-        
+    """
+    Initializes all manager classes and stores them in the session state.
+    This function ensures all managers are ready before any other UI logic runs.
+    """
+    # Step 1: Initialize Firebase Client (if not already done)
     if 'firebase_client' not in st.session_state:
         try:
+            if "firebase" not in st.secrets or "credentials_json" not in st.secrets.firebase or "pyrebase_config" not in st.secrets.firebase:
+                st.error("Lỗi cấu hình: Không tìm thấy Firebase secrets trong Streamlit. Vui lòng kiểm tra lại tệp secrets.toml của bạn.")
+                st.stop()
+
             creds_dict = json.loads(st.secrets["firebase"]["credentials_json"])
             pyrebase_config_dict = json.loads(st.secrets["firebase"]["pyrebase_config"])
             st.session_state.firebase_client = FirebaseClient(creds_dict, pyrebase_config_dict)
         except (json.JSONDecodeError, KeyError) as e:
-            st.error(f"Failed to parse Firebase configurations: {e}")
-            return False
+            st.error(f"Lỗi phân tích cấu hình Firebase: {e}. Vui lòng kiểm tra lại định dạng JSON trong secrets.")
+            st.stop()
 
     fb_client = st.session_state.firebase_client
+
+    # Step 2: Initialize all managers in the correct order of dependency
+    # These managers have no dependencies on other managers
+    if 'auth_mgr' not in st.session_state:
+        st.session_state.auth_mgr = AuthManager(fb_client)
+    if 'branch_mgr' not in st.session_state:
+        st.session_state.branch_mgr = BranchManager(fb_client)
+    if 'product_mgr' not in st.session_state:
+        st.session_state.product_mgr = ProductManager(fb_client)
+    if 'inventory_mgr' not in st.session_state:
+        st.session_state.inventory_mgr = InventoryManager(fb_client)
+    if 'customer_mgr' not in st.session_state:
+        st.session_state.customer_mgr = CustomerManager(fb_client)
+    if 'settings_mgr' not in st.session_state:
+        st.session_state.settings_mgr = SettingsManager(fb_client)
+    if 'promotion_mgr' not in st.session_state:
+        st.session_state.promotion_mgr = PromotionManager(fb_client)
+    if 'cost_mgr' not in st.session_state:
+        st.session_state.cost_mgr = CostManager(fb_client)
+    if 'price_mgr' not in st.session_state:
+        st.session_state.price_mgr = PriceManager(fb_client)
     
-    if 'auth_mgr' not in st.session_state: st.session_state.auth_mgr = AuthManager(fb_client)
-    if 'branch_mgr' not in st.session_state: st.session_state.branch_mgr = BranchManager(fb_client)
-    if 'product_mgr' not in st.session_state: st.session_state.product_mgr = ProductManager(fb_client)
-    if 'inventory_mgr' not in st.session_state: st.session_state.inventory_mgr = InventoryManager(fb_client)
-    if 'customer_mgr' not in st.session_state: st.session_state.customer_mgr = CustomerManager(fb_client)
-    if 'settings_mgr' not in st.session_state: st.session_state.settings_mgr = SettingsManager(fb_client)
-    if 'promotion_mgr' not in st.session_state: st.session_state.promotion_mgr = PromotionManager(fb_client)
-    if 'cost_mgr' not in st.session_state: st.session_state.cost_mgr = CostManager(fb_client)
-    if 'price_mgr' not in st.session_state: st.session_state.price_mgr = PriceManager(fb_client)
-    
+    # These managers depend on others, so they are initialized last.
     if 'report_mgr' not in st.session_state:
         st.session_state.report_mgr = ReportManager(fb_client, st.session_state.cost_mgr)
         
@@ -109,11 +126,10 @@ def main():
         return
 
     auth_mgr = st.session_state.auth_mgr
-    branch_mgr = st.session_state.branch_mgr # Get branch manager
+    branch_mgr = st.session_state.branch_mgr
     auth_mgr.check_cookie_and_re_auth()
 
     if 'user' not in st.session_state or st.session_state.user is None:
-        # FIX: Call the correct function with correct arguments
         render_login_page(auth_mgr, branch_mgr)
         return
     
