@@ -61,7 +61,6 @@ class AuthManager:
         normalized_username = username.lower()
         email = f"{normalized_username}@email.placeholder.com"
 
-        # First, try the modern Firebase Auth method
         try:
             user = self.auth.sign_in_with_email_and_password(email, password)
             uid = user['localId']
@@ -74,18 +73,15 @@ class AuthManager:
                     self.users_col.document(uid).update({"last_login": datetime.now().isoformat()})
                     st.session_state['user'] = user_data
 
-                    # Set persistence cookie if configured
                     session_config = self.settings_mgr.get_session_config()
                     persistence_days = session_config.get('persistence_days', 0)
                     if persistence_days > 0 and 'refreshToken' in user:
-                        self.cookies['refresh_token'] = user['refreshToken']
-                        # Note: The underlying library handles expiry, but we pass it for clarity
-                        # self.cookies.set(..., expires_at=...)
+                        expires = datetime.now() + timedelta(days=persistence_days)
+                        self.cookies.set('refresh_token', user['refreshToken'], expires_at=expires)
 
                     return user_data
-            return None # User exists in Auth but not in Firestore DB
+            return None
 
-        # If Firebase Auth fails, try the legacy password_hash method
         except Exception:
             all_users_stream = self.users_col.stream()
             found_user_doc = None
@@ -97,31 +93,61 @@ class AuthManager:
                     break
 
             if not found_user_doc:
-                return None # User not found
+                return None
 
             user_data = found_user_doc.to_dict()
             password_hash = user_data.get("password_hash")
 
-            # Crucially, only check password if a hash exists
             if not password_hash or not self._check_password(password, password_hash):
-                return None # Invalid password
+                return None
 
-            # If password is correct, proceed with login
-            uid = found_user_doc.id
-            user_data['uid'] = uid
-            if user_data.get('active', False):
-                self.users_col.document(uid).update({"last_login": datetime.now().isoformat()})
+            # --- MIGRATE LEGACY USER TO FIREBASE AUTH ---
+            try:
+                st.warning("Đang nâng cấp tài khoản của bạn lên hệ thống mới...")
+                # 1. Create the user in Firebase Auth with the legacy credentials
+                new_user_record = self.auth.create_user_with_email_and_password(email, password)
+                new_uid = new_user_record['localId']
+
+                # 2. Prepare the new user data, removing the old hash
+                user_data.pop('password_hash', None)
+                user_data['uid'] = new_uid
+                user_data['updated_at'] = datetime.now().isoformat()
+                if 'created_at' not in user_data:
+                    user_data['created_at'] = datetime.now().isoformat() # Ensure it exists
+
+                # 3. Create the new user document in Firestore and delete the old one
+                self.users_col.document(new_uid).set(user_data)
+                self.users_col.document(found_user_doc.id).delete()
+
+                # 4. Sign in the new user to get their session, including the refresh token
+                user_session = self.auth.sign_in_with_email_and_password(email, password)
+
+                # 5. Set session state and the crucial persistence cookie
                 st.session_state['user'] = user_data
-                # Note: Legacy login does not support persistence cookies (remember me)
+                session_config = self.settings_mgr.get_session_config()
+                persistence_days = session_config.get('persistence_days', 0)
+                if persistence_days > 0 and 'refreshToken' in user_session:
+                    expires = datetime.now() + timedelta(days=persistence_days)
+                    self.cookies.set('refresh_token', user_session['refreshToken'], expires_at=expires)
+                
+                st.success("Nâng cấp tài khoản thành công! Tự động đăng nhập.")
                 return user_data
-            
-            return None # User is inactive
+
+            except Exception as e:
+                if "EMAIL_EXISTS" in str(e):
+                    st.error("Lỗi: Không thể nâng cấp tài khoản. Username đã tồn tại trong hệ thống mới. Vui lòng liên hệ quản trị viên.")
+                else:
+                    st.error(f"Lỗi không xác định khi nâng cấp tài khoản: {e}")
+                return None
 
     def logout(self):
         if 'user' in st.session_state:
             del st.session_state['user']
         
-        self.cookies.delete('refresh_token')
+        # Use the delete method, which is the correct one for the library
+        if 'refresh_token' in self.cookies:
+            self.cookies.delete('refresh_token')
+            
         st.query_params.clear()
         st.rerun()
 
