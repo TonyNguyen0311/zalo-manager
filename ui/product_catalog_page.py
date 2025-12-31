@@ -7,13 +7,13 @@ from managers.auth_manager import AuthManager
 def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager):
     st.header("🗂️ Danh mục Sản phẩm")
 
-    # --- Kiểm tra quyền truy cập --- #
+    # --- Check access rights ---
     user_info = auth_mgr.get_current_user_info()
     if not user_info or user_info.get('role') != 'admin':
         st.error("Chỉ Quản trị viên (admin) mới có quyền truy cập chức năng này.")
         return
 
-    # --- Thiết lập Danh mục & Đơn vị (cho Admin) --- #
+    # --- Category & Unit Setup (for Admin) ---
     with st.expander("Thiết lập Danh mục & Đơn vị"):
         col_cat, col_unit = st.columns(2)
         with col_cat:
@@ -47,7 +47,7 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
 
     st.divider()
 
-    # --- Form Thêm Sản Phẩm Mới (Sản phẩm gốc) --- #
+    # --- Form to Add New Product (Master Product) ---
     with st.expander("➕ Thêm Sản Phẩm Mới", expanded=False):
         with st.form("add_product_form", clear_on_submit=True):
             st.info("💡 SKU sẽ được tạo tự động dựa trên Danh mục (VD: AT-0001)")
@@ -65,6 +65,8 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
             c4, c5 = st.columns(2)
             barcode = c4.text_input("Barcode (Nếu có)")
             cost_price = c5.number_input("Giá vốn tham khảo (VNĐ)", min_value=0, step=1000)
+            
+            # --- RE-ENABLED IMAGE UPLOAD ---
             image_file = st.file_uploader("Ảnh sản phẩm", type=['png', 'jpg', 'jpeg'])
 
             submitted = st.form_submit_button("Lưu vào Danh mục")
@@ -72,36 +74,43 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
                 if not name or not cat_name:
                     st.error("Tên sản phẩm và Danh mục là bắt buộc!")
                 else:
-                    img_url = ""
+                    img_url = "" # Default to empty string
+                    # --- RE-ENABLED IMAGE UPLOAD LOGIC ---
                     if image_file:
-                        with st.spinner("Đang upload ảnh..."):
-                            img_url = prod_mgr.upload_image(image_file, image_file.name)
+                        # Check if the image handler is available before attempting upload
+                        if prod_mgr.image_handler:
+                            with st.spinner("Đang tối ưu và tải ảnh lên Google Drive..."):
+                                img_url = prod_mgr.upload_image(image_file, image_file.name)
+                                if not img_url:
+                                    st.warning("Tải ảnh thất bại, nhưng sản phẩm vẫn sẽ được tạo không có ảnh.")
+                        else:
+                            st.warning("Chức năng tải ảnh chưa được cấu hình. Sản phẩm sẽ được tạo không có ảnh.")
                     
-                    # Dữ liệu sản phẩm gốc, không có giá bán
+                    # Product data, without sales price
                     data = {
                         "name": name,
                         "barcode": barcode,
                         "category_id": cat_opts.get(cat_name),
                         "unit_id": unit_opts.get(unit_name),
-                        "cost_price": cost_price, # Giá vốn tham khảo
+                        "cost_price": cost_price, # Reference cost price
                         "image_url": img_url
                     }
                     
                     success, msg = prod_mgr.create_product(data)
                     if success:
-                        st.success(msg)
+                        st.success(f"Tạo sản phẩm '{name}' với SKU '{msg}' thành công!")
                         st.rerun()
                     else:
                         st.error(msg)
 
     st.divider()
 
-    # --- Danh sách Sản phẩm gốc --- #
+    # --- Master Product List ---
     st.subheader("Toàn bộ sản phẩm trong danh mục")
-    products = prod_mgr.list_products()
+    products = prod_mgr.get_all_products()
     
     if products:
-        # Lấy thông tin danh mục để hiển thị
+        # Get category info for display
         cats_df = pd.DataFrame(prod_mgr.get_categories()).set_index('id')
         cat_names = cats_df['name'].to_dict()
 
@@ -125,4 +134,3 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
         )
     else:
         st.info("Chưa có sản phẩm nào trong danh mục.")
-

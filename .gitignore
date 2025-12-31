@@ -1,6 +1,9 @@
-.idx/
-__pycache__/
-*.pyc
-.venv/
+# Ignore Streamlit secrets file
+.streamlit/secrets.toml
+
+# Ignore Python virtual environment
 venv/
-.env
+.venv/
+
+# Ignore pycache
+__pycache__/

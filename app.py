@@ -2,9 +2,13 @@
 import streamlit as st
 import json
 from datetime import datetime
-from managers.firebase_client import FirebaseClient
 
-# Import managers
+# --- Google/Firebase Imports ---
+from managers.firebase_client import FirebaseClient
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+
+# --- Import Managers ---
 from managers.auth_manager import AuthManager
 from managers.branch_manager import BranchManager
 from managers.product_manager import ProductManager
@@ -16,8 +20,9 @@ from managers.settings_manager import SettingsManager
 from managers.promotion_manager import PromotionManager
 from managers.cost_manager import CostManager
 from managers.price_manager import PriceManager
+from managers.product.image_handler import ImageHandler # <-- NEW IMPORT
 
-# Import UI pages
+# --- Import UI Pages ---
 from ui.login_page import render_login_page
 from ui.pos_page import render_pos_page
 from ui.report_page import render_report_page
@@ -31,7 +36,7 @@ from ui.product_catalog_page import render_product_catalog_page
 from ui.business_products_page import render_business_products_page
 from ui.stock_transfer_page import show_stock_transfer_page
 from ui.cost_allocation_page import render_cost_allocation_page
-from ui.pnl_report_page import render_pnl_report_page # New import
+from ui.pnl_report_page import render_pnl_report_page
 
 st.set_page_config(layout="wide")
 
@@ -54,7 +59,7 @@ MENU_PERMISSIONS = {
 MENU_STRUCTURE = {
     "📈 Nghiệp vụ": [
         "Bán hàng (POS)",
-        "Báo cáo P&L", # Added
+        "Báo cáo P&L",
         "Báo cáo & Phân tích",
         "Ghi nhận Chi phí"
     ],
@@ -75,28 +80,58 @@ MENU_STRUCTURE = {
     ]
 }
 
+# --- Function to initialize Google Drive Service ---
+def get_gdrive_service():
+    try:
+        creds_json = st.secrets["gcp_service_account"]["credentials"]
+        creds = service_account.Credentials.from_service_account_info(
+            json.loads(creds_json),
+            scopes=["https://www.googleapis.com/auth/drive"]
+        )
+        return build('drive', 'v3', credentials=creds)
+    except Exception as e:
+        st.error(f"Lỗi kết nối Google Drive: {e}")
+        return None
+
 def init_managers():
+    # --- Initialize Firebase Client ---
     if 'firebase_client' not in st.session_state:
         try:
             creds_dict = json.loads(st.secrets["firebase"]["credentials_json"])
             pyrebase_config_dict = json.loads(st.secrets["firebase"]["pyrebase_config"])
-            # *** MODIFIED HERE: Get storage bucket and pass it to the client ***
             storage_bucket = st.secrets["firebase"].get("storage_bucket")
             st.session_state.firebase_client = FirebaseClient(creds_dict, pyrebase_config_dict, storage_bucket)
         except Exception as e:
             st.error(f"Lỗi cấu hình Firebase: {e}")
             st.stop()
 
+    # --- Initialize Google Drive Image Handler ---
+    if 'image_handler' not in st.session_state:
+        gdrive_service = get_gdrive_service()
+        if gdrive_service:
+            folder_id = st.secrets["gcp_service_account"]["folder_id"]
+            st.session_state.image_handler = ImageHandler(gdrive_service, folder_id)
+        else:
+            st.session_state.image_handler = None # Ensure it exists but is None
+
+    # --- Initialize All Other Managers ---
     fb_client = st.session_state.firebase_client
-    managers_to_init = {
-        'auth_mgr': AuthManager, 'branch_mgr': BranchManager, 'product_mgr': ProductManager,
-        'inventory_mgr': InventoryManager, 'customer_mgr': CustomerManager, 'settings_mgr': SettingsManager,
-        'promotion_mgr': PromotionManager, 'cost_mgr': CostManager, 'price_mgr': PriceManager,
+    # Pass the image_handler to ProductManager
+    if 'product_mgr' not in st.session_state:
+        st.session_state.product_mgr = ProductManager(fb_client, st.session_state.image_handler)
+
+    # Initialize other managers that don't depend on image_handler
+    other_managers = {
+        'auth_mgr': AuthManager, 'branch_mgr': BranchManager, 
+        'inventory_mgr': InventoryManager, 'customer_mgr': CustomerManager, 
+        'settings_mgr': SettingsManager, 'promotion_mgr': PromotionManager, 
+        'cost_mgr': CostManager, 'price_mgr': PriceManager,
     }
-    for mgr_name, mgr_class in managers_to_init.items():
+    for mgr_name, mgr_class in other_managers.items():
         if mgr_name not in st.session_state:
             st.session_state[mgr_name] = mgr_class(fb_client)
-
+    
+    # Initialize managers with specific dependencies
     if 'report_mgr' not in st.session_state:
         st.session_state.report_mgr = ReportManager(fb_client, st.session_state.cost_mgr)
         
@@ -149,6 +184,7 @@ def main():
     page = st.session_state.get('page')
     if not page: st.info("Vui lòng chọn chức năng."); return
 
+    # Pass managers to the render functions
     page_renderers = {
         "Bán hàng (POS)": lambda: render_pos_page(st.session_state.pos_mgr),
         "Báo cáo P&L": lambda: render_pnl_report_page(st.session_state.report_mgr, st.session_state.branch_mgr, st.session_state.auth_mgr),

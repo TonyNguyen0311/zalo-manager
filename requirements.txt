@@ -1,8 +1,9 @@
+
 streamlit
 firebase-admin
-bcrypt
-pandas
-plotly
 pyrebase4
-setuptools
+pandas
 Pillow
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib

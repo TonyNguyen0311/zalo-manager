@@ -8,18 +8,20 @@ from google.cloud.firestore_v1.base_query import And, FieldFilter
 # Import the sub-managers
 from .product.category_manager import CategoryManager
 from .product.unit_manager import UnitManager
-from .product.image_handler import ImageHandler
+# Note: We no longer initialize ImageHandler here, it's passed in.
 
 class ProductManager:
-    def __init__(self, firebase_client):
+    # MODIFIED: __init__ now accepts an image_handler instance
+    def __init__(self, firebase_client, image_handler=None):
         self.db = firebase_client.db
-        self.bucket = firebase_client.bucket
         self.collection = self.db.collection('products')
         
         # Initialize sub-managers
         self.category_manager = CategoryManager(self.db)
         self.unit_manager = UnitManager(self.db)
-        self.image_handler = ImageHandler(self.bucket) # Pass the bucket to ImageHandler
+        
+        # MODIFIED: Assign the pre-configured image_handler
+        self.image_handler = image_handler 
 
     # --- Method Delegation --- 
     # Delegate category and unit methods to their respective managers
@@ -37,8 +39,12 @@ class ProductManager:
 
     # Delegate image upload to the image handler
     def upload_image(self, file_obj, filename):
-        # Use the new optimizing uploader
-        return self.image_handler.optimize_and_upload_image(file_obj, filename)
+        # This now calls the Google Drive uploader if it was passed in
+        if self.image_handler:
+            return self.image_handler.optimize_and_upload_image(file_obj, filename)
+        else:
+            logging.warning("Image Handler not configured. Image upload skipped.")
+            return None
 
     # --- Core Product Logic (Remains in ProductManager) ---
 
