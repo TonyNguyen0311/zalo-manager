@@ -30,44 +30,34 @@ class AuthManager:
         return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
     def check_cookie_and_re_auth(self):
-        st.info("DEBUG: Bắt đầu check_cookie_and_re_auth.")
         if 'user' in st.session_state and st.session_state.user is not None:
-            st.info("DEBUG: Đã có user trong session_state. Bỏ qua re-auth.")
             return True
 
         refresh_token = self.cookies.get('refresh_token')
-        st.info(f"DEBUG: Lấy refresh_token từ cookie: {'Tồn tại' if refresh_token else 'Không tồn tại'}.")
 
         if not refresh_token:
-            st.info("DEBUG: Không có refresh_token. Kết thúc re-auth.")
             return False
 
-        st.info("DEBUG: Tìm thấy refresh_token, đang thử làm mới phiên...")
         try:
             user_session = self.auth.refresh(refresh_token)
             uid = user_session['userId']
-            st.info(f"DEBUG: Làm mới phiên thành công cho UID: {uid}")
             
             user_doc = self.users_col.document(uid).get()
             if user_doc.exists:
                 user_data = user_doc.to_dict()
                 if not user_data.get('active', False):
-                    st.warning("DEBUG: Tài khoản đã bị vô hiệu hóa.")
                     if 'refresh_token' in self.cookies:
                         del self.cookies['refresh_token']
                     return False
                 
                 user_data['uid'] = uid
                 st.session_state['user'] = user_data
-                st.success("DEBUG: Tự động đăng nhập lại thành công!")
                 return True
             else:
-                st.error("DEBUG: Không tìm thấy dữ liệu người dùng cho UID này.")
                 if 'refresh_token' in self.cookies:
                     del self.cookies['refresh_token']
                 return False
-        except Exception as e:
-            st.error(f"DEBUG: Lỗi khi làm mới token: {e}")
+        except Exception:
             if 'refresh_token' in self.cookies:
                 del self.cookies['refresh_token']
             return False
@@ -92,11 +82,9 @@ class AuthManager:
 
                 session_config = self.settings_mgr.get_session_config()
                 persistence_days = session_config.get('persistence_days', 0)
-                st.info(f"DEBUG: Kiểm tra ghi nhớ đăng nhập. Số ngày: {persistence_days}")
                 if persistence_days > 0 and 'refreshToken' in user:
-                    st.info(f"DEBUG: Đang thiết lập refresh_token cookie để ghi nhớ đăng nhập.")
-                    self.cookies['refresh_token'] = user['refreshToken']
-                    st.info("DEBUG: Đã đặt cookie.")
+                    expires = datetime.now() + timedelta(days=persistence_days)
+                    self.cookies['refresh_token'] = (user['refreshToken'], expires)
 
                 return ('SUCCESS', user_data)
             else:
@@ -152,14 +140,11 @@ class AuthManager:
             return ('FAILED', f"Đã xảy ra lỗi không mong muốn: {e}")
 
     def logout(self):
-        st.info("DEBUG: Bắt đầu quá trình đăng xuất.")
         if 'user' in st.session_state:
             del st.session_state['user']
-            st.info("DEBUG: Đã xóa user khỏi session_state.")
         
         if 'refresh_token' in self.cookies:
             del self.cookies['refresh_token']
-            st.info("DEBUG: Đã xóa refresh_token khỏi cookie.")
             
         st.query_params.clear()
         st.rerun()
