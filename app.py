@@ -81,19 +81,21 @@ MENU_STRUCTURE = {
 }
 
 def init_managers():
-    # --- Initialize Firebase Client (REFACTORED & CORRECTED) ---
+    # --- Initialize Firebase Client (ROBUST & CORRECTED) ---
     if 'firebase_client' not in st.session_state:
         try:
-            # CORRECTED: Use 'gcp_service_account' which is consistent with secrets config
-            creds_dict = st.secrets["gcp_service_account"]
+            gcp_creds_full = st.secrets["gcp_service_account"]
             pyrebase_config_dict = st.secrets["pyrebase_config"]
             
-            # This key is optional and was removed from the main logic, but we keep the check
+            # ROBUSTNESS: Create a copy and remove non-Firebase keys to prevent errors
+            firebase_creds = gcp_creds_full.copy()
+            firebase_creds.pop("gdrive_folder_id", None) # Safely remove the GDrive key if it exists
+
             storage_bucket = st.secrets.get("firebase_storage_bucket") 
             if not storage_bucket:
                  st.info("Thông tin lưu trữ cũ 'firebase_storage_bucket' không được tìm thấy. Điều này là bình thường vì chúng ta đã chuyển sang Google Drive.")
 
-            st.session_state.firebase_client = FirebaseClient(creds_dict, pyrebase_config_dict, storage_bucket)
+            st.session_state.firebase_client = FirebaseClient(firebase_creds, pyrebase_config_dict, storage_bucket)
         except KeyError as e:
             st.error(f"Lỗi cấu hình Firebase: Không tìm thấy secret key '{e.args[0]}'.")
             st.info(f"Vui lòng kiểm tra lại cấu hình secrets trên Streamlit Cloud. Đảm bảo bạn đã có đủ các mục: [gcp_service_account], [pyrebase_config], và gdrive_folder_id.")
@@ -110,7 +112,7 @@ def init_managers():
             st.session_state.image_handler = ImageHandler(gdrive_creds, folder_id)
         except KeyError as e:
             st.warning(f"Google Drive chưa được cấu hình (thiếu secret '{e.args[0]}'). Chức năng upload file sẽ bị vô hiệu hóa.")
-            st.session_state.image_handler = None # Ensure it's set to None
+            st.session_state.image_handler = None
 
     # --- Initialize All Other Managers ---
     fb_client = st.session_state.firebase_client
