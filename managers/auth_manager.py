@@ -162,10 +162,7 @@ class AuthManager:
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(days=persistence_days)
         
-        user_agent = ""
-        if hasattr(st, 'experimental_get_query_params'):
-            params = st.experimental_get_query_params()
-            user_agent = params.get('user_agent', [''])[0]
+        user_agent = st.query_params.get('user_agent', '')
 
         session_data = {
             'user_id': user_id,
@@ -195,8 +192,7 @@ class AuthManager:
             del self.cookies['session_token']
             self.cookies.save()
 
-        if hasattr(st, 'query_params'):
-            st.query_params.clear()
+        st.query_params.clear()
 
     def get_current_user_info(self):
         return st.session_state.get('user')
