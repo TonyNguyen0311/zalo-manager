@@ -57,8 +57,6 @@ class AuthManager:
 
             expires_at = session_data.get('expires_at')
             
-            # Firestore returns timezone-aware datetime objects (UTC)
-            # We need to compare it with a timezone-aware current time
             if session_data.get('revoked', False) or datetime.now(timezone.utc) > expires_at:
                 self.logout()
                 return False
@@ -194,7 +192,8 @@ class AuthManager:
             del st.session_state['user']
         
         if 'session_token' in self.cookies:
-            self.cookies.delete('session_token')
+            del self.cookies['session_token']
+            self.cookies.save()
 
         if hasattr(st, 'query_params'):
             st.query_params.clear()
