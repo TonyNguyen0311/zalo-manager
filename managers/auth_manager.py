@@ -33,26 +33,22 @@ class AuthManager:
         if 'user' in st.session_state and st.session_state.user is not None:
             return True
 
+        refresh_token = self.cookies.get('refresh_token')
+        if not refresh_token:
+            return False
+
         try:
-            refresh_token_data = self.cookies.get('refresh_token')
-            if not refresh_token_data:
-                return False
-
-            # The cookie value is now a tuple: (token, expiration_datetime)
-            # We only need the token for the refresh operation.
-            refresh_token = refresh_token_data[0] 
-
             user_session = self.auth.refresh(refresh_token)
             uid = user_session['userId']
             
             user_doc = self.users_col.document(uid).get()
             if not user_doc.exists:
-                self.logout(clear_cookie=True)
+                self.logout()
                 return False
 
             user_data = user_doc.to_dict()
             if not user_data.get('active', False):
-                self.logout(clear_cookie=True)
+                self.logout()
                 return False
             
             user_data['uid'] = uid
@@ -60,7 +56,7 @@ class AuthManager:
             return True
 
         except Exception:
-            self.logout(clear_cookie=True)
+            self.logout()
             return False
 
     def login(self, username, password):
@@ -85,11 +81,11 @@ class AuthManager:
                 persistence_days = session_config.get('persistence_days', 0)
                 if persistence_days > 0 and 'refreshToken' in user:
                     expires_at = datetime.now() + timedelta(days=persistence_days)
-                    self.cookies['refresh_token'] = (user['refreshToken'], expires_at)
+                    self.cookies.set('refresh_token', user['refreshToken'], expires_at=expires_at)
 
                 return ('SUCCESS', user_data)
             else:
-                self.logout(clear_cookie=True) 
+                self.logout() 
                 return ('FAILED', "Đăng nhập thất bại. Dữ liệu người dùng không tồn tại.")
 
         except requests.exceptions.HTTPError as e:
@@ -100,7 +96,6 @@ class AuthManager:
                 return ('FAILED', f"Lỗi không xác định từ Firebase: {e}")
 
             if error_message in ['INVALID_PASSWORD', 'EMAIL_NOT_FOUND']:
-                 # Simplified logic for legacy user check
                 legacy_user_query = self.users_col.where("username", "==", normalized_username).limit(1).stream()
                 legacy_user_docs = list(legacy_user_query)
                 if not legacy_user_docs:
@@ -113,7 +108,6 @@ class AuthManager:
                 if not password_hash or not self._check_password(password, password_hash):
                     return ('FAILED', "Sai tên đăng nhập hoặc mật khẩu.")
                 
-                # Legacy user validated, now migrate
                 try:
                     new_user_record = self.auth.create_user_with_email_and_password(email, password)
                     new_uid = new_user_record['localId']
@@ -131,7 +125,6 @@ class AuthManager:
                 except requests.exceptions.HTTPError as migrate_e:
                     migrate_error_msg = migrate_e.response.json().get('error', {}).get('message', '')
                     if migrate_error_msg == 'EMAIL_EXISTS':
-                        # This can happen in a race condition. The user should just try logging in again.
                         return ('FAILED', "Tài khoản đã tồn tại. Vui lòng thử đăng nhập lại.")
                     return ('FAILED', f"Lỗi nâng cấp tài khoản: {migrate_error_msg}")
                 except Exception as migrate_e_general:
@@ -139,15 +132,13 @@ class AuthManager:
             
             return ('FAILED', f"Lỗi xác thực: {error_message}")
         except Exception as e:
-            st.error(f"Đã xảy ra lỗi không mong muốn trong quá trình đăng nhập: {e}")
             return ('FAILED', f"Đã xảy ra lỗi không mong muốn: {e}")
 
-    def logout(self, clear_cookie=True):
+    def logout(self):
         if 'user' in st.session_state:
             del st.session_state['user']
         
-        if clear_cookie and 'refresh_token' in self.cookies:
-            # Delete the cookie by setting its expiration to the past
+        if 'refresh_token' in self.cookies:
             self.cookies.delete('refresh_token')
             
         st.query_params.clear()
