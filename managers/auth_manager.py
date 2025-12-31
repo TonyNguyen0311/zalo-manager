@@ -18,7 +18,8 @@ class AuthManager:
         # cookie_secret_key = "ABCDEF1234567890"
         # Bạn nên tự tạo một chuỗi ngẫu nhiên, dài và an toàn cho khóa này.
         self.cookies = EncryptedCookieManager(
-            secret=st.secrets.get("cookie_secret_key", "a_default_secret_key_that_is_not_safe"),
+            # Tham số đúng là 'password', không phải 'secret'
+            password=st.secrets.get("cookie_secret_key", "a_default_secret_key_that_is_not_safe"),
             prefix="nk-pos/auth/"
         )
         if not self.cookies.ready():
