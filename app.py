@@ -81,39 +81,42 @@ MENU_STRUCTURE = {
 }
 
 def init_managers():
-    # --- Initialize Firebase Client (FINAL & CORRECTED) ---
+    # --- Initialize Firebase Client (Project: nk-pos-47135) ---
     if 'firebase_client' not in st.session_state:
         try:
-            # FINAL FIX: Convert Secrets object to a standard Python dictionary
-            gcp_creds_full = dict(st.secrets["gcp_service_account"])
-            pyrebase_config_dict = dict(st.secrets["pyrebase_config"])
+            firebase_creds = dict(st.secrets["firebase_credentials"])
+            pyrebase_config = dict(st.secrets["pyrebase_config"])
             
-            # Now that it's a dict, we can safely copy and manipulate it
-            firebase_creds = gcp_creds_full.copy()
-            firebase_creds.pop("gdrive_folder_id", None) 
+            # Storage bucket is part of pyrebase_config, no longer needed as a separate parameter for FirebaseClient
+            st.session_state.firebase_client = FirebaseClient(firebase_creds, pyrebase_config)
+            st.info("✅ Đã kết nối tới Firebase (Database & Auth).")
 
-            storage_bucket = st.secrets.get("firebase_storage_bucket") 
-            if not storage_bucket:
-                 st.info("Thông tin lưu trữ cũ 'firebase_storage_bucket' không được tìm thấy. Điều này là bình thường vì chúng ta đã chuyển sang Google Drive.")
-
-            st.session_state.firebase_client = FirebaseClient(firebase_creds, pyrebase_config_dict, storage_bucket)
         except KeyError as e:
             st.error(f"Lỗi cấu hình Firebase: Không tìm thấy secret key '{e.args[0]}'.")
-            st.info(f"Vui lòng kiểm tra lại cấu hình secrets trên Streamlit Cloud. Đảm bảo bạn đã có đủ các mục: [gcp_service_account], [pyrebase_config], và gdrive_folder_id.")
+            st.info("Vui lòng kiểm tra lại các khối [firebase_credentials] và [pyrebase_config] trong secrets.")
             st.stop()
         except Exception as e:
             st.error(f"Lỗi khởi tạo Firebase: {e}")
             st.stop()
 
-    # --- Initialize Google Drive Image Handler ---
+    # --- Initialize Google Drive Image Handler (Project: nk-pos-482708) ---
     if 'image_handler' not in st.session_state:
         try:
-            gdrive_creds = dict(st.secrets["gcp_service_account"])
+            # Credentials for the Google Drive project
+            gdrive_creds = dict(st.secrets["gdrive_credentials"])
+            # Folder ID is now a separate key
             folder_id = st.secrets["gdrive_folder_id"]
+            
             st.session_state.image_handler = ImageHandler(gdrive_creds, folder_id)
+            st.info("✅ Đã kết nối tới Google Drive (Lưu trữ ảnh).")
+
         except KeyError as e:
-            st.warning(f"Google Drive chưa được cấu hình (thiếu secret '{e.args[0]}'). Chức năng upload file sẽ bị vô hiệu hóa.")
+            st.warning(f"Google Drive chưa được cấu hình (thiếu secret '{e.args[0]}'). Chức năng upload ảnh sẽ bị vô hiệu hóa.")
             st.session_state.image_handler = None
+        except Exception as e:
+            st.error(f"Lỗi khởi tạo Google Drive Uploader: {e}")
+            st.session_state.image_handler = None
+
 
     # --- Initialize All Other Managers ---
     fb_client = st.session_state.firebase_client
