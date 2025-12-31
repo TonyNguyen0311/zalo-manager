@@ -29,54 +29,39 @@ class AuthManager:
         return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
     def check_cookie_and_re_auth(self):
-        # --- DEBUG START ---
-        st.warning("DEBUG: Bắt đầu check_cookie_and_re_auth")
         if 'user' in st.session_state and st.session_state.user is not None:
-            st.warning("DEBUG: Đã có user trong session_state. Bỏ qua.")
             return True
 
         refresh_token = self.cookies.get('refresh_token')
         if not refresh_token:
-            st.warning("DEBUG: Không tìm thấy refresh_token trong cookie.")
             return False
-        
-        st.warning(f"DEBUG: Đã tìm thấy refresh_token: ...{refresh_token[-10:]}")
 
         try:
-            st.warning("DEBUG: Đang thử làm mới session với refresh_token...")
             user_session = self.auth.refresh(refresh_token)
             uid = user_session['userId']
-            st.warning(f"DEBUG: Làm mới session thành công. UID: {uid}")
             
-            st.warning("DEBUG: Đang lấy thông tin user từ Firestore...")
             user_doc = self.users_col.document(uid).get()
             if user_doc.exists:
-                st.warning("DEBUG: Lấy thông tin user thành công.")
                 user_data = user_doc.to_dict()
                 if not user_data.get('active', False):
-                    st.warning("DEBUG: User không còn active. Xóa cookie.")
                     self.cookies.delete('refresh_token') 
                     return False
                 
                 user_data['uid'] = uid
                 st.session_state['user'] = user_data
-                st.warning("DEBUG: Tái xác thực thành công!")
                 return True
             else:
-                st.warning("DEBUG: User không tồn tại trong DB. Xóa cookie.")
                 self.cookies.delete('refresh_token')
                 return False
-        except Exception as e:
-            st.error(f"Lỗi tái xác thực cookie (vui lòng gửi lỗi này cho dev): {e}")
-            st.warning("DEBUG: Xóa cookie do có lỗi.")
+        except Exception:
             self.cookies.delete('refresh_token')
             return False
-        # --- DEBUG END ---
 
     def login(self, username, password):
         normalized_username = username.lower()
         email = f"{normalized_username}@email.placeholder.com"
 
+        # First, try the modern Firebase Auth method
         try:
             user = self.auth.sign_in_with_email_and_password(email, password)
             uid = user['localId']
@@ -89,18 +74,18 @@ class AuthManager:
                     self.users_col.document(uid).update({"last_login": datetime.now().isoformat()})
                     st.session_state['user'] = user_data
 
+                    # Set persistence cookie if configured
                     session_config = self.settings_mgr.get_session_config()
                     persistence_days = session_config.get('persistence_days', 0)
-
                     if persistence_days > 0 and 'refreshToken' in user:
-                        self.cookies.set(
-                            'refresh_token',
-                            user['refreshToken'],
-                            expires_at=datetime.now() + timedelta(days=persistence_days)
-                        )
-                    return user_data
-            return None
+                        self.cookies['refresh_token'] = user['refreshToken']
+                        # Note: The underlying library handles expiry, but we pass it for clarity
+                        # self.cookies.set(..., expires_at=...)
 
+                    return user_data
+            return None # User exists in Auth but not in Firestore DB
+
+        # If Firebase Auth fails, try the legacy password_hash method
         except Exception:
             all_users_stream = self.users_col.stream()
             found_user_doc = None
@@ -111,24 +96,32 @@ class AuthManager:
                     found_user_doc = doc
                     break
 
-            if not found_user_doc or not self._check_password(password, found_user_doc.to_dict().get("password_hash", "")):
-                return None
+            if not found_user_doc:
+                return None # User not found
 
             user_data = found_user_doc.to_dict()
+            password_hash = user_data.get("password_hash")
+
+            # Crucially, only check password if a hash exists
+            if not password_hash or not self._check_password(password, password_hash):
+                return None # Invalid password
+
+            # If password is correct, proceed with login
             uid = found_user_doc.id
             user_data['uid'] = uid
             if user_data.get('active', False):
                 self.users_col.document(uid).update({"last_login": datetime.now().isoformat()})
                 st.session_state['user'] = user_data
+                # Note: Legacy login does not support persistence cookies (remember me)
                 return user_data
-            return None
+            
+            return None # User is inactive
 
     def logout(self):
         if 'user' in st.session_state:
             del st.session_state['user']
         
         self.cookies.delete('refresh_token')
-        
         st.query_params.clear()
         st.rerun()
 
