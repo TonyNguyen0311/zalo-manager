@@ -80,51 +80,37 @@ MENU_STRUCTURE = {
     ]
 }
 
-# --- Function to initialize Google Drive Service (REFACTORED) ---
-def get_gdrive_service():
-    try:
-        # Simplified: Reads credentials directly from the TOML structure
-        creds = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=["https://www.googleapis.com/auth/drive"]
-        )
-        return build('drive', 'v3', credentials=creds)
-    except Exception as e:
-        st.error(f"Lỗi kết nối Google Drive: {e}")
-        st.info("Kiểm tra lại cấu hình 'gcp_service_account' trong mục secret của Streamlit. Toàn bộ nội dung file JSON của service account cần được sao chép vào đây.")
-        return None
-
 def init_managers():
-    # --- Initialize Firebase Client (REFACTORED) ---
+    # --- Initialize Firebase Client (REFACTORED & CORRECTED) ---
     if 'firebase_client' not in st.session_state:
         try:
-            # Simplified: Reads credentials directly from TOML structures
-            creds_dict = st.secrets["firebase_credentials"]
+            # CORRECTED: Use 'gcp_service_account' which is consistent with secrets config
+            creds_dict = st.secrets["gcp_service_account"]
             pyrebase_config_dict = st.secrets["pyrebase_config"]
-            storage_bucket = st.secrets.get("firebase_storage_bucket")
-
+            
+            # This key is optional and was removed from the main logic, but we keep the check
+            storage_bucket = st.secrets.get("firebase_storage_bucket") 
             if not storage_bucket:
-                st.warning("Firebase Storage chưa được cấu hình (thiếu 'firebase_storage_bucket'). Chức năng upload file sẽ bị vô hiệu hóa.")
+                 st.info("Thông tin lưu trữ cũ 'firebase_storage_bucket' không được tìm thấy. Điều này là bình thường vì chúng ta đã chuyển sang Google Drive.")
 
             st.session_state.firebase_client = FirebaseClient(creds_dict, pyrebase_config_dict, storage_bucket)
+        except KeyError as e:
+            st.error(f"Lỗi cấu hình Firebase: Không tìm thấy secret key '{e.args[0]}'.")
+            st.info(f"Vui lòng kiểm tra lại cấu hình secrets trên Streamlit Cloud. Đảm bảo bạn đã có đủ các mục: [gcp_service_account], [pyrebase_config], và gdrive_folder_id.")
+            st.stop()
         except Exception as e:
-            st.error(f"Lỗi cấu hình Firebase: {e}")
-            st.info("Kiểm tra lại cấu hình 'firebase_credentials' và 'pyrebase_config' trong mục secret của Streamlit.")
+            st.error(f"Lỗi khởi tạo Firebase: {e}")
             st.stop()
 
-    # --- Initialize Google Drive Image Handler (REFACTORED) ---
+    # --- Initialize Google Drive Image Handler ---
     if 'image_handler' not in st.session_state:
-        gdrive_creds = st.secrets.get("gcp_service_account")
-        folder_id = st.secrets.get("gdrive_folder_id")
-        
-        if gdrive_creds and folder_id:
+        try:
+            gdrive_creds = st.secrets["gcp_service_account"]
+            folder_id = st.secrets["gdrive_folder_id"]
             st.session_state.image_handler = ImageHandler(gdrive_creds, folder_id)
-        else:
-            if not gdrive_creds:
-                st.warning("Google Drive chưa được cấu hình (thiếu 'gcp_service_account'). Chức năng upload file sẽ bị vô hiệu hóa.")
-            if not folder_id:
-                st.warning("Google Drive folder_id chưa được cấu hình (thiếu 'gdrive_folder_id'). Chức năng upload file sẽ bị vô hiệu hóa.")
-            st.session_state.image_handler = None
+        except KeyError as e:
+            st.warning(f"Google Drive chưa được cấu hình (thiếu secret '{e.args[0]}'). Chức năng upload file sẽ bị vô hiệu hóa.")
+            st.session_state.image_handler = None # Ensure it's set to None
 
     # --- Initialize All Other Managers ---
     fb_client = st.session_state.firebase_client
