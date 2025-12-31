@@ -28,7 +28,6 @@ class ImageHandler:
             img = Image.open(uploaded_file)
             img.thumbnail(max_size)
             
-            # Convert to RGB if it's RGBA to avoid issues with saving as JPEG
             if img.mode == 'RGBA':
                 img = img.convert('RGB')
 
@@ -61,11 +60,9 @@ class ImageHandler:
                 fields='id, webViewLink'
             ).execute()
             
-            # Make the file publicly readable
             file_id = file.get('id')
             self.service.permissions().create(fileId=file_id, body={'type': 'anyone', 'role': 'reader'}).execute()
             
-            # It's better to return the direct webViewLink
             return file.get('webViewLink')
 
         except Exception as e:

@@ -3,7 +3,7 @@ import streamlit as st
 import json
 from datetime import datetime
 
-# --- Google/Firebase Imports ---
+# --- Google/Firebase Imports -- -
 from managers.firebase_client import FirebaseClient
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -20,7 +20,7 @@ from managers.settings_manager import SettingsManager
 from managers.promotion_manager import PromotionManager
 from managers.cost_manager import CostManager
 from managers.price_manager import PriceManager
-from managers.product.image_handler import ImageHandler # <-- NEW IMPORT
+from managers.product.image_handler import ImageHandler
 
 # --- Import UI Pages ---
 from ui.login_page import render_login_page
@@ -44,7 +44,7 @@ st.set_page_config(layout="wide")
 MENU_PERMISSIONS = {
     "admin": [
         "Báo cáo P&L", "Báo cáo & Phân tích", "Bán hàng (POS)", "Sản phẩm Kinh doanh",
-        "Quản lý Kho", "Luân chuyển Kho", "Ghi nhận Chi phí", "Danh mục Sản phẩm", 
+        "Quản lý Kho", "Luân chuyển Kho", "Ghi nhận Chi phí", "Danh mục Sản phẩm",
         "Danh mục Chi phí", "Phân bổ Chi phí",
         "Quản lý Khuyến mãi", "Quản lý Người dùng", "Quản trị Hệ thống",
     ],
@@ -64,8 +64,8 @@ MENU_STRUCTURE = {
         "Ghi nhận Chi phí"
     ],
     "📦 Hàng hoá": [
-        "Danh mục Sản phẩm", 
-        "Sản phẩm Kinh doanh", 
+        "Danh mục Sản phẩm",
+        "Sản phẩm Kinh doanh",
         "Quản lý Kho",
         "Luân chuyển Kho"
     ],
@@ -80,61 +80,70 @@ MENU_STRUCTURE = {
     ]
 }
 
-# --- Function to initialize Google Drive Service ---
+# --- Function to initialize Google Drive Service (REFACTORED) ---
 def get_gdrive_service():
     try:
-        creds_json = st.secrets["gcp_service_account"]["credentials"]
+        # Simplified: Reads credentials directly from the TOML structure
         creds = service_account.Credentials.from_service_account_info(
-            json.loads(creds_json),
+            st.secrets["gcp_service_account"],
             scopes=["https://www.googleapis.com/auth/drive"]
         )
         return build('drive', 'v3', credentials=creds)
     except Exception as e:
         st.error(f"Lỗi kết nối Google Drive: {e}")
+        st.info("Kiểm tra lại cấu hình 'gcp_service_account' trong mục secret của Streamlit. Toàn bộ nội dung file JSON của service account cần được sao chép vào đây.")
         return None
 
 def init_managers():
-    # --- Initialize Firebase Client ---
+    # --- Initialize Firebase Client (REFACTORED) ---
     if 'firebase_client' not in st.session_state:
         try:
-            creds_dict = json.loads(st.secrets["firebase"]["credentials_json"])
-            pyrebase_config_dict = json.loads(st.secrets["firebase"]["pyrebase_config"])
-            storage_bucket = st.secrets["firebase"].get("storage_bucket")
+            # Simplified: Reads credentials directly from TOML structures
+            creds_dict = st.secrets["firebase_credentials"]
+            pyrebase_config_dict = st.secrets["pyrebase_config"]
+            storage_bucket = st.secrets.get("firebase_storage_bucket")
+
+            if not storage_bucket:
+                st.warning("Firebase Storage chưa được cấu hình (thiếu 'firebase_storage_bucket'). Chức năng upload file sẽ bị vô hiệu hóa.")
+
             st.session_state.firebase_client = FirebaseClient(creds_dict, pyrebase_config_dict, storage_bucket)
         except Exception as e:
             st.error(f"Lỗi cấu hình Firebase: {e}")
+            st.info("Kiểm tra lại cấu hình 'firebase_credentials' và 'pyrebase_config' trong mục secret của Streamlit.")
             st.stop()
 
-    # --- Initialize Google Drive Image Handler ---
+    # --- Initialize Google Drive Image Handler (REFACTORED) ---
     if 'image_handler' not in st.session_state:
-        gdrive_service = get_gdrive_service()
-        if gdrive_service:
-            folder_id = st.secrets["gcp_service_account"]["folder_id"]
-            st.session_state.image_handler = ImageHandler(gdrive_service, folder_id)
+        gdrive_creds = st.secrets.get("gcp_service_account")
+        folder_id = st.secrets.get("gdrive_folder_id")
+        
+        if gdrive_creds and folder_id:
+            st.session_state.image_handler = ImageHandler(gdrive_creds, folder_id)
         else:
-            st.session_state.image_handler = None # Ensure it exists but is None
+            if not gdrive_creds:
+                st.warning("Google Drive chưa được cấu hình (thiếu 'gcp_service_account'). Chức năng upload file sẽ bị vô hiệu hóa.")
+            if not folder_id:
+                st.warning("Google Drive folder_id chưa được cấu hình (thiếu 'gdrive_folder_id'). Chức năng upload file sẽ bị vô hiệu hóa.")
+            st.session_state.image_handler = None
 
     # --- Initialize All Other Managers ---
     fb_client = st.session_state.firebase_client
-    # Pass the image_handler to ProductManager
     if 'product_mgr' not in st.session_state:
         st.session_state.product_mgr = ProductManager(fb_client, st.session_state.image_handler)
 
-    # Initialize other managers that don't depend on image_handler
     other_managers = {
-        'auth_mgr': AuthManager, 'branch_mgr': BranchManager, 
-        'inventory_mgr': InventoryManager, 'customer_mgr': CustomerManager, 
-        'settings_mgr': SettingsManager, 'promotion_mgr': PromotionManager, 
+        'auth_mgr': AuthManager, 'branch_mgr': BranchManager,
+        'inventory_mgr': InventoryManager, 'customer_mgr': CustomerManager,
+        'settings_mgr': SettingsManager, 'promotion_mgr': PromotionManager,
         'cost_mgr': CostManager, 'price_mgr': PriceManager,
     }
     for mgr_name, mgr_class in other_managers.items():
         if mgr_name not in st.session_state:
             st.session_state[mgr_name] = mgr_class(fb_client)
-    
-    # Initialize managers with specific dependencies
+
     if 'report_mgr' not in st.session_state:
         st.session_state.report_mgr = ReportManager(fb_client, st.session_state.cost_mgr)
-        
+
     if 'pos_mgr' not in st.session_state:
         st.session_state.pos_mgr = POSManager(
             firebase_client=fb_client, inventory_mgr=st.session_state.inventory_mgr,
@@ -148,7 +157,7 @@ def display_sidebar():
     st.sidebar.success(f"Xin chào, {user_info.get('display_name', 'Người dùng')}!")
     role = user_info.get('role', 'staff').lower()
     st.sidebar.write(f"Vai trò: **{role.upper()}**")
-    
+
     user_allowed_pages = MENU_PERMISSIONS.get(role, [])
     if 'page' not in st.session_state or st.session_state.page not in user_allowed_pages:
         st.session_state.page = next((p for cat_pages in MENU_STRUCTURE.values() for p in cat_pages if p in user_allowed_pages), None)
@@ -163,7 +172,7 @@ def display_sidebar():
                     if st.button(page_name, key=f"btn_{page_name.replace(' ', '_')}", use_container_width=True):
                         st.session_state.page = page_name
                         st.rerun()
-    
+
     st.sidebar.divider()
     if st.sidebar.button("Đăng xuất", use_container_width=True):
         st.session_state.auth_mgr.logout()
@@ -179,12 +188,11 @@ def main():
     if 'user' not in st.session_state or st.session_state.user is None:
         render_login_page(auth_mgr, branch_mgr)
         return
-    
+
     display_sidebar()
     page = st.session_state.get('page')
     if not page: st.info("Vui lòng chọn chức năng."); return
 
-    # Pass managers to the render functions
     page_renderers = {
         "Bán hàng (POS)": lambda: render_pos_page(st.session_state.pos_mgr),
         "Báo cáo P&L": lambda: render_pnl_report_page(st.session_state.report_mgr, st.session_state.branch_mgr, st.session_state.auth_mgr),
