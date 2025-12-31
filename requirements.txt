@@ -5,3 +5,4 @@ pandas
 plotly
 pyrebase4
 setuptools
+Pillow

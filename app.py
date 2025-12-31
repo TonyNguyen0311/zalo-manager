@@ -80,7 +80,9 @@ def init_managers():
         try:
             creds_dict = json.loads(st.secrets["firebase"]["credentials_json"])
             pyrebase_config_dict = json.loads(st.secrets["firebase"]["pyrebase_config"])
-            st.session_state.firebase_client = FirebaseClient(creds_dict, pyrebase_config_dict)
+            # *** MODIFIED HERE: Get storage bucket and pass it to the client ***
+            storage_bucket = st.secrets["firebase"].get("storage_bucket")
+            st.session_state.firebase_client = FirebaseClient(creds_dict, pyrebase_config_dict, storage_bucket)
         except Exception as e:
             st.error(f"Lỗi cấu hình Firebase: {e}")
             st.stop()
