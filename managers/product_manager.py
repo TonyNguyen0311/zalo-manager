@@ -22,12 +22,12 @@ class ProductManager:
     def get_units(self): return self.unit_manager.get_units()
     def create_unit(self, name): return self.unit_manager.create_unit(name)
 
-    def upload_image(self, file_obj, filename):
+    def upload_image(self, file_obj, sku):
         if self.image_handler:
-            optimized_buffer = self.image_handler.optimize_image(file_obj)
-            if optimized_buffer:
-                return self.image_handler.upload_image(optimized_buffer, filename)
-        logging.warning("Image Handler not configured or image optimization failed.")
+            # Directly call the upload_image method from the handler
+            # The handler itself is responsible for the entire upload logic.
+            return self.image_handler.upload_image(file_obj, sku)
+        logging.warning("Image Handler not configured. Image upload skipped.")
         return None
 
     def create_product(self, product_data):
@@ -51,6 +51,17 @@ class ProductManager:
                 product_data['created_at'] = firestore.SERVER_TIMESTAMP
                 product_data['updated_at'] = firestore.SERVER_TIMESTAMP
 
+                # Now that we have the SKU, we can handle the image upload
+                if product_data.get('image_file'):
+                    image_file = product_data.pop('image_file') # Remove from DB data
+                    image_url = self.upload_image(image_file, sku)
+                    if image_url:
+                        product_data['image_url'] = image_url
+                    else:
+                        # Decide if you want to fail the whole process or just warn
+                        logging.warning(f"Image upload failed for {sku}, product created without image.")
+                        product_data['image_url'] = ""
+                
                 product_ref = self.collection.document(sku)
                 trans.set(product_ref, product_data)
                 trans.update(cat_ref, {"current_seq": new_seq})
@@ -63,7 +74,7 @@ class ProductManager:
             sku, error = update_in_transaction(transaction, cat_ref, product_data)
             if error:
                 return False, error
-            return True, sku
+            return True, f"Tạo sản phẩm '{product_data['name']}' với SKU '{sku}' thành công!"
         except Exception as e:
             return False, f"Lỗi khi tạo sản phẩm: {str(e)}"
 
@@ -71,6 +82,17 @@ class ProductManager:
         if not sku or not isinstance(updates, dict):
             return False, "SKU hoặc dữ liệu cập nhật không hợp lệ."
         try:
+            # Handle image update separately
+            if 'image_file' in updates:
+                image_file = updates.pop('image_file')
+                if image_file:
+                    image_url = self.upload_image(image_file, sku)
+                    if image_url:
+                        updates['image_url'] = image_url
+                    else:
+                        # Don't update the image URL if upload fails
+                        logging.warning(f"Image update failed for {sku}. Keeping old image.")
+
             updates['updated_at'] = firestore.SERVER_TIMESTAMP
             self.collection.document(sku).update(updates)
             return True, f"Sản phẩm {sku} đã được cập nhật."
@@ -83,6 +105,7 @@ class ProductManager:
 
     def hard_delete_product(self, sku):
         try:
+            # Todo: Delete associated image from Google Drive if necessary
             self.collection.document(sku).delete()
             return True, f"Sản phẩm {sku} đã được xóa vĩnh viễn."
         except Exception as e:
@@ -99,7 +122,7 @@ class ProductManager:
             results = []
             for doc in docs:
                 d = doc.to_dict()
-                d['id'] = doc.id # Use id (which is sku) for keying
+                d['id'] = doc.id
                 d['sku'] = doc.id
                 results.append(d)
             return results
