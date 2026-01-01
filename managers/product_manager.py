@@ -63,10 +63,18 @@ class ProductManager:
                     logging.info(f"Successfully uploaded image for {sku}. URL: {image_url}")
                     return image_url
                 else:
-                    st.error("Tải ảnh lên thất bại. Không nhận được URL.")
+                    # This case is hit if upload_image returns None without an exception
+                    st.error("Tải ảnh lên thất bại. Không nhận được URL. Kiểm tra lại cấu hình và quyền của Google Drive.")
+                    return None
             except Exception as e:
                 logging.error(f"Image upload failed for {sku}: {e}")
                 st.error(f"Lỗi trong quá trình tải ảnh lên: {e}")
+                return None
+        
+        # NEW: Explicitly check why the upload was skipped
+        if not self.image_handler:
+            st.error("Lỗi Cấu Hình: Trình xử lý ảnh (ImageHandler) không được khởi tạo. Vui lòng kiểm tra lại mục 'drive_oauth' và 'drive_folder_id' trong Streamlit Secrets.")
+            logging.error("Attempted to upload image but ImageHandler is not initialized.")
         return None
 
     def create_product(self, product_data):
