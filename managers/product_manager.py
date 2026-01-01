@@ -13,46 +13,37 @@ from .product.image_handler import ImageHandler
 
 class ProductManager:
     """
-    Manages all product-related operations, including categories, units,
-    and product data. It now self-initializes the ImageHandler.
+    Manages all product-related operations. It now self-initializes the 
+    ImageHandler using OAuth 2.0 user-delegated credentials.
     """
     def __init__(self, firebase_client):
         self.db = firebase_client.db
         self.collection = self.db.collection('products')
         self.category_manager = CategoryManager(self.db)
         self.unit_manager = UnitManager(self.db)
-        # Image handler is now initialized internally
+        # Image handler is now initialized internally using OAuth
         self.image_handler = self._initialize_image_handler()
 
-    def _get_corrected_creds(self, secrets_key):
-        """Correctly formats the private key from Streamlit secrets."""
-        if secrets_key not in st.secrets:
-            return None
-        creds_section = st.secrets[secrets_key]
-        creds_dict = dict(creds_section)
-        if 'private_key' in creds_dict:
-            creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
-        return creds_dict
-
     def _initialize_image_handler(self):
-        """Initializes ImageHandler using secrets from st.secrets."""
-        logging.info("Attempting to initialize ImageHandler...")
-        # Check for the correct secret keys as specified by the user
-        if "gdrive_credentials" in st.secrets and "gdrive_folder_id" in st.secrets:
+        """Initializes ImageHandler using OAuth secrets from st.secrets."""
+        logging.info("Attempting to initialize ImageHandler using OAuth 2.0...")
+        # Check for the OAuth secret section and folder ID
+        if "drive_oauth" in st.secrets and "drive_folder_id" in st.secrets:
             try:
-                creds_info = self._get_corrected_creds("gdrive_credentials")
-                folder_id = st.secrets["gdrive_folder_id"]
+                # Convert the secrets proxy to a regular dictionary
+                creds_info = dict(st.secrets["drive_oauth"])
+                folder_id = st.secrets["drive_folder_id"]
                 
-                if folder_id and creds_info:
-                    logging.info("Google Drive credentials and folder ID found. Initializing ImageHandler.")
+                if folder_id and creds_info.get('refresh_token'):
+                    logging.info("Google Drive OAuth credentials and folder ID found. Initializing ImageHandler.")
                     return ImageHandler(credentials_info=creds_info, folder_id=folder_id)
                 else:
-                    logging.warning("Google Drive folder ID or credentials are not fully set in secrets.")
+                    logging.warning("Google Drive folder ID or refresh_token is not set in secrets.")
             except Exception as e:
-                logging.error(f"Failed to initialize ImageHandler: {e}")
+                logging.error(f"Failed to initialize ImageHandler via OAuth: {e}")
                 st.warning("Không thể khởi tạo trình xử lý ảnh. Chức năng tải ảnh sẽ bị tắt.")
         else:
-            logging.warning("'gdrive_credentials' or 'gdrive_folder_id' not found in Streamlit secrets. Image uploads will be disabled.")
+            logging.warning("'drive_oauth' or 'drive_folder_id' not found in Streamlit secrets. Image uploads will be disabled.")
         return None
 
     # --- Category and Unit methods ---
@@ -110,7 +101,6 @@ class ProductManager:
             if not sku:
                 raise Exception("Không thể tạo SKU sản phẩm trong giao dịch.")
 
-            # Upload image after the product is successfully created
             if image_file_to_upload:
                 self._upload_and_update_image_url(sku, image_file_to_upload)
 
