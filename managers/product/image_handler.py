@@ -23,9 +23,8 @@ class ImageHandler:
     def _initialize_drive_service(self, credentials_info):
         """Initializes the Google Drive service using user-delegated OAuth 2.0 credentials."""
         try:
-            # Create credentials using the refresh token flow
             creds = Credentials(
-                None,  # No initial access token, it will be refreshed automatically
+                None,  # No initial access token
                 refresh_token=credentials_info['refresh_token'],
                 token_uri=credentials_info.get('token_uri', 'https://oauth2.googleapis.com/token'),
                 client_id=credentials_info['client_id'],
@@ -44,9 +43,7 @@ class ImageHandler:
             return None
 
     def _optimize_image(self, image_file, max_width=800, quality=85):
-        """
-        Resizes and compresses the image before uploading.
-        """
+        """Resizes and compresses the image before uploading."""
         try:
             img = Image.open(image_file)
             if img.mode != 'RGB':
@@ -61,13 +58,12 @@ class ImageHandler:
             return img_byte_arr
         except Exception as e:
             logger.error(f"Error optimizing image: {e}")
-            st.warning("Không thể tối ưu hóa ảnh. Tải lên ảnh gốc.")
             image_file.seek(0)
-            return image_file
+            return image_file # Return original if optimization fails
 
     def upload_image(self, image_file, product_sku):
         """
-        Optimizes and uploads an image to Google Drive, then makes it public.
+        Uploads/updates an image to Google Drive and returns the file ID.
         """
         if not self.drive_service:
             st.error("Dịch vụ Google Drive chưa được khởi tạo.")
@@ -76,60 +72,59 @@ class ImageHandler:
         filename = f"{product_sku}.jpg"
         optimized_image_bytes = self._optimize_image(image_file)
         media = MediaIoBaseUpload(optimized_image_bytes, mimetype='image/jpeg', resumable=True)
-        file_metadata = {
-            'name': filename,
-            'parents': [self.folder_id]
-        }
-
+        
         try:
             query = f"name='{filename}' and '{self.folder_id}' in parents and trashed=false"
             response = self.drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
             existing_files = response.get('files', [])
 
             if existing_files:
+                # Update existing file
                 file_id = existing_files[0].get('id')
-                request = self.drive_service.files().update(fileId=file_id, media_body=media, fields='id')
+                file = self.drive_service.files().update(fileId=file_id, media_body=media, fields='id').execute()
             else:
-                request = self.drive_service.files().create(body=file_metadata, media_body=media, fields='id')
+                # Create new file
+                file_metadata = {'name': filename, 'parents': [self.folder_id]}
+                file = self.drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
             
-            file = request.execute()
             file_id = file.get('id')
 
+            # Make the file public
             if file_id:
                 self.drive_service.permissions().create(
-                    fileId=file_id,
-                    body={'type': 'anyone', 'role': 'reader'}
+                    fileId=file_id, body={'type': 'anyone', 'role': 'reader'}
                 ).execute()
-                
-                direct_link = f"https://drive.google.com/uc?id={file_id}"
-                st.success(f"Ảnh đã được tải lên thành công!")
-                return direct_link
+                logger.info(f"Image for SKU {product_sku} uploaded. File ID: {file_id}")
+                return file_id # Return only the file ID
 
             return None
 
         except HttpError as error:
-            logger.error(f"An HTTP error occurred: {error}")
+            logger.error(f"An HTTP error occurred during image upload: {error}")
             st.error(f"Lỗi khi tải ảnh lên: {error}")
-            return None
-        except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
-            st.error(f"Đã có lỗi không mong muốn xảy ra: {e}")
             return None
 
     def delete_image(self, product_sku):
-        """Deletes an image from Google Drive based on product_sku."""
+        """Deletes an image from Google Drive based on the product_sku."""
         if not self.drive_service:
+            logger.warning("Attempted to delete image but Drive service is not initialized.")
             return
 
         filename = f"{product_sku}.jpg"
         try:
             query = f"name='{filename}' and '{self.folder_id}' in parents and trashed=false"
             response = self.drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
-            existing_files = response.get('files', [])
+            files = response.get('files', [])
 
-            if existing_files:
-                file_id = existing_files[0].get('id')
+            if files:
+                file_id = files[0].get('id')
                 self.drive_service.files().delete(fileId=file_id).execute()
-                logger.info(f"Successfully deleted image '{filename}' from Google Drive.")
-        except Exception as e:
-            logger.error(f"Error deleting image '{filename}' from Google Drive: {e}")
+                logger.info(f"Successfully deleted image '{filename}' (ID: {file_id}) from Google Drive.")
+            else:
+                logger.info(f"Image for SKU {product_sku} not found in Drive. No action taken.")
+
+        except HttpError as e:
+            logger.error(f"HTTP error while deleting image for SKU {product_sku}: {e}")
+            # Optionally, show a user-facing error
+            st.warning(f"Lỗi khi xoá ảnh trên Drive: {e}")
+
