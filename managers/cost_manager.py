@@ -24,16 +24,23 @@ class CostManager:
                 creds_info = dict(st.secrets["drive_oauth"])
                 if creds_info.get('refresh_token'):
                     return ImageHandler(credentials_info=creds_info)
+                else:
+                    logging.warning("CostManager's ImageHandler not initialized: 'refresh_token' is missing.")
             except Exception as e:
                 logging.error(f"Failed to initialize ImageHandler for costs: {e}")
-        logging.warning("CostManager's ImageHandler not initialized.")
+        else:
+            logging.warning("CostManager's ImageHandler not initialized: 'drive_oauth' secret not found.")
         return None
 
     def upload_receipt_image(self, image_file):
-        """Uploads a receipt image using the centralized handler."""
-        if not self.image_handler or not self.receipt_image_folder_id:
-            st.error("Lỗi Cấu Hình: Trình xử lý ảnh hoặc folder ID cho chứng từ chưa được cài đặt.")
+        """Uploads a receipt image with specific configuration checks."""
+        if not self.image_handler:
+            st.error("Lỗi Cấu Hình: Trình xử lý ảnh chưa được khởi tạo. Vui lòng kiểm tra 'drive_oauth' trong Streamlit secrets.")
             return None
+        if not self.receipt_image_folder_id:
+            st.error("Lỗi Cấu Hình: 'drive_receipt_folder_id' chưa được cài đặt trong secrets.")
+            return None
+            
         try:
             return self.image_handler.upload_receipt_image(image_file, self.receipt_image_folder_id)
         except Exception as e:
@@ -63,11 +70,11 @@ class CostManager:
             source_ref = self.entry_col.document(source_entry_id)
             source_entry_data = {
                 **kwargs,
-                'id': source_entry_id,
                 'name': f"[TRẢ TRƯỚC] {kwargs['name']}",
                 'created_at': datetime.now().isoformat(),
                 'status': 'AMORTIZED_SOURCE',
-                'source_entry_id': None
+                'source_entry_id': None,
+                'id': source_entry_id
             }
             batch.set(source_ref, source_entry_data)
 

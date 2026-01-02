@@ -27,9 +27,12 @@ class ProductManager:
                 creds_info = dict(st.secrets["drive_oauth"])
                 if creds_info.get('refresh_token'):
                     return ImageHandler(credentials_info=creds_info)
+                else:
+                    logging.warning("ImageHandler not initialized: 'refresh_token' is missing from 'drive_oauth' secrets.")
             except Exception as e:
                 logging.error(f"Failed to initialize ImageHandler: {e}")
-        logging.warning("ImageHandler not initialized. Check secrets.")
+        else:
+            logging.warning("ImageHandler not initialized: 'drive_oauth' secret not found.")
         return None
 
     def get_categories(self): return self.category_manager.get_categories()
@@ -38,19 +41,24 @@ class ProductManager:
     def create_unit(self, name): return self.unit_manager.create_unit(name)
 
     def _handle_image_update(self, sku, image_file, delete_image_flag):
-        if not self.image_handler or not self.product_image_folder_id:
-            st.error("Lỗi Cấu Hình: Trình xử lý ảnh hoặc folder ID cho sản phẩm chưa được cài đặt.")
-            return
+        # Provide specific error messages for configuration issues
+        if not self.image_handler:
+            st.error("Lỗi Cấu Hình: Trình xử lý ảnh chưa được khởi tạo. Vui lòng kiểm tra lại 'drive_oauth' trong Streamlit secrets.")
+            return False
+        if not self.product_image_folder_id:
+            st.error("Lỗi Cấu Hình: 'drive_product_folder_id' chưa được cài đặt trong secrets. Vui lòng thêm ID thư mục Google Drive.")
+            return False
         
         filename = f"{sku}.jpg"
         if delete_image_flag:
             try:
                 self.image_handler.delete_image_by_filename(self.product_image_folder_id, filename)
-                self.collection.document(sku).update({"image_url": ""}) # Use image_url now
+                self.collection.document(sku).update({"image_url": ""})
                 st.info(f"Đã xóa ảnh cho sản phẩm {sku}.")
             except Exception as e:
                 st.error(f"Lỗi khi xóa ảnh: {e}")
-            return
+                return False
+            return True # Successfully deleted
 
         if image_file:
             try:
@@ -61,11 +69,24 @@ class ProductManager:
                     st.success(f"Đã cập nhật ảnh cho sản phẩm {sku}.")
                 else:
                     st.error("Tải ảnh lên thất bại.")
+                    return False
             except Exception as e:
                 st.error(f"Lỗi trong quá trình tải ảnh lên: {e}")
+                return False
+        return True # Successfully uploaded or no action needed
 
     def create_product(self, product_data):
         image_file_to_upload = product_data.pop('image_file', None)
+        
+        # If there's an image, check configuration first.
+        if image_file_to_upload:
+            if not self.image_handler:
+                st.error("Lỗi Cấu Hình: Trình xử lý ảnh chưa được khởi tạo. Vui lòng kiểm tra lại 'drive_oauth' trong Streamlit secrets.")
+                return False, "Tạo sản phẩm thất bại do lỗi cấu hình."
+            if not self.product_image_folder_id:
+                st.error("Lỗi Cấu Hình: 'drive_product_folder_id' chưa được cài đặt trong secrets.")
+                return False, "Tạo sản phẩm thất bại do lỗi cấu hình."
+
         cat_ref = self.category_manager.cat_col.document(product_data['category_id'])
 
         @firestore.transactional
@@ -90,7 +111,8 @@ class ProductManager:
             transaction = self.db.transaction()
             sku = _create_in_transaction(transaction, cat_ref, product_data)
             if sku and image_file_to_upload:
-                self._handle_image_update(sku, image_file_to_upload, delete_image_flag=False)
+                if not self._handle_image_update(sku, image_file_to_upload, delete_image_flag=False):
+                    return False, f"Sản phẩm '{product_data['name']}' đã được tạo với SKU '{sku}', nhưng tải ảnh lên thất bại."
             return True, f"Tạo sản phẩm '{product_data['name']}' (SKU: '{sku}') thành công!"
         except Exception as e:
             logging.error(f"Error creating product: {e}")
@@ -101,13 +123,18 @@ class ProductManager:
         delete_image_flag = updates.pop('delete_image', False)
 
         try:
-            self._handle_image_update(sku, image_file_to_upload, delete_image_flag)
+            image_op_success = True
+            if image_file_to_upload or delete_image_flag:
+                image_op_success = self._handle_image_update(sku, image_file_to_upload, delete_image_flag)
+            
+            if not image_op_success:
+                return False, f"Cập nhật ảnh cho sản phẩm {sku} thất bại. Các thông tin khác không được cập nhật."
 
             if updates:
                 updates['updated_at'] = firestore.SERVER_TIMESTAMP
                 self.collection.document(sku).update(updates)
             
-            return True, f"Sản phẩm {sku} đã được cập nhật."
+            return True, f"Sản phẩm {sku} đã được cập nhật thành công."
         except Exception as e:
             logging.error(f"Error updating product {sku}: {e}")
             return False, f"Lỗi khi cập nhật sản phẩm: {e}"
@@ -118,8 +145,12 @@ class ProductManager:
     def hard_delete_product(self, sku):
         try:
             if self.image_handler and self.product_image_folder_id:
-                filename = f"{sku}.jpg"
-                self.image_handler.delete_image_by_filename(self.product_image_folder_id, filename)
+                try:
+                    filename = f"{sku}.jpg"
+                    self.image_handler.delete_image_by_filename(self.product_image_folder_id, filename)
+                except Exception as e:
+                    logging.warning(f"Không thể xóa ảnh của sản phẩm {sku}. Lỗi: {e}. Tiếp tục xóa sản phẩm khỏi database.")
+            
             self.collection.document(sku).delete()
             return True, f"Sản phẩm {sku} đã được xóa vĩnh viễn."
         except Exception as e:
@@ -155,4 +186,3 @@ class ProductManager:
         except Exception as e:
             logging.error(f"Error in get_listed_products_for_branch: {e}")
             return []
-
