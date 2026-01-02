@@ -1,12 +1,13 @@
 
 from datetime import datetime, time
 import uuid
+import pytz
 
 class PriceManager:
     def __init__(self, firebase_client):
         self.db = firebase_client.db
         self.prices_col = self.db.collection('branch_prices')
-        self.schedules_col = self.db.collection('price_schedules') # <<< COLLECTION MỚI
+        self.schedules_col = self.db.collection('price_schedules')
 
     # --- CÁC HÀM QUẢN LÝ GIÁ TRỰC TIẾP (GIỮ NGUYÊN) ---
     def set_price(self, sku: str, branch_id: str, price: float):
@@ -60,7 +61,7 @@ class PriceManager:
             "sku": sku,
             "branch_id": branch_id,
             "new_price": new_price,
-            "apply_date": apply_datetime,
+            "start_date": apply_datetime, # <<< THAY ĐỔI: apply_date -> start_date
             "status": "PENDING", # PENDING, APPLIED, CANCELED
             "created_at": datetime.now(),
             "created_by": created_by
@@ -74,7 +75,7 @@ class PriceManager:
             .where('sku', '==', sku) \
             .where('branch_id', '==', branch_id) \
             .where('status', '==', 'PENDING') \
-            .order_by('apply_date')
+            .order_by('start_date') # <<< THAY ĐỔI: apply_date -> start_date
         return [doc.to_dict() for doc in query.stream()]
 
     def cancel_schedule(self, schedule_id: str):
@@ -90,10 +91,12 @@ class PriceManager:
         Job chạy để áp dụng các lịch trình giá đã đến hạn.
         Đây là chức năng quan trọng cần được gọi định kỳ.
         """
-        now = datetime.now()
+        now = datetime.now(pytz.utc)
+        # <<< THAY ĐỔI: Sửa đổi toàn bộ truy vấn để khớp với chỉ mục (status, start_date) >>>
         query = self.schedules_col \
             .where('status', '==', 'PENDING') \
-            .where('apply_date', '<=', now)
+            .where('start_date', '<=', now) \
+            .order_by('start_date') # Thêm order_by để sử dụng chỉ mục phức hợp
         
         applied_count = 0
         for doc in query.stream():
