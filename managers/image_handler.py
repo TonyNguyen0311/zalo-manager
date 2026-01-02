@@ -73,8 +73,8 @@ class ImageHandler:
             file_id = file.get('id')
             if file_id:
                 self.drive_service.permissions().create(fileId=file_id, body={'type': 'anyone', 'role': 'reader'}).execute()
-                # Return a direct link for viewing/embedding
-                return f"https://lh3.googleusercontent.com/d/{file_id}"
+                # Corrected URL format for direct embedding
+                return f"https://drive.google.com/uc?export=view&id={file_id}"
             return None
 
         except HttpError as error:
