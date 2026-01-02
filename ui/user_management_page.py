@@ -198,11 +198,15 @@ def render_user_list(users, current_user, auth_mgr: AuthManager, branch_mgr: Bra
             cols[0].write(f"**{user.get('display_name')}**")
             cols[0].write(f"*{user.get('username')}*")
 
-            # Column 2: Role
-            cols[1].chip(user_role.upper(), icon="👑" if user_role == 'admin' else '👤')
+            # Column 2: Role (Replaced st.chip with st.markdown for compatibility)
+            role_icon = "👑" if user_role == 'admin' else '👤'
+            cols[1].markdown(f"<div style='display: inline-block; background-color: #333; border: 1px solid #444; border-radius: 0.5rem; padding: 0.15rem 0.5rem; text-align: center;'>{role_icon} {user_role.upper()}</div>", unsafe_allow_html=True)
 
-            # Column 3: Status
-            cols[2].chip("Hoạt động" if is_active else "Vô hiệu", icon="✔️" if is_active else "✖️")
+            # Column 3: Status (Replaced st.chip with st.markdown for compatibility)
+            status_text = "Hoạt động" if is_active else "Vô hiệu"
+            status_icon = "✔️" if is_active else "✖️"
+            status_color = "rgba(40, 167, 69, 0.8)" if is_active else "rgba(220, 53, 69, 0.8)"
+            cols[2].markdown(f"<div style='display: inline-block; color: white; background-color: {status_color}; border-radius: 0.5rem; padding: 0.15rem 0.5rem; text-align: center;'>{status_icon} {status_text}</div>", unsafe_allow_html=True)
 
             # Column 4: Branches
             branch_names = [all_branches_map.get(b_id, "?") for b_id in user.get("branch_ids", [])]
@@ -267,4 +271,3 @@ def render_user_management_page(auth_mgr: AuthManager, branch_mgr: BranchManager
             render_create_user_form(auth_mgr, branch_mgr, current_role)
     else:
         render_user_list(all_users, current_user, auth_mgr, branch_mgr)
-
