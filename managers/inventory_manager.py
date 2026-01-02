@@ -62,6 +62,23 @@ class InventoryManager:
         except Exception as e:
             logging.error(f"Error fetching inventory for branch '{branch_id}': {e}")
             return {}
+    
+    def get_inventory_adjustments_history(self, branch_id: str, limit: int = 200):
+        """
+        Lấy lịch sử điều chỉnh kho cho một chi nhánh cụ thể.
+        Sắp xếp được thực hiện ở phía server-side (Python) để tránh lỗi index của Firestore.
+        """
+        try:
+            if not branch_id:
+                return []
+            query = self.adjustments_col.where('branch_id', '==', branch_id).limit(limit)
+            docs = query.stream()
+            results = [doc.to_dict() for doc in docs]
+            results.sort(key=lambda x: x.get('timestamp', '1970-01-01T00:00:00.000000'), reverse=True)
+            return results
+        except Exception as e:
+            logging.error(f"Lỗi khi lấy lịch sử điều chỉnh kho cho chi nhánh '{branch_id}': {e}")
+            return []
 
     def create_transfer(self, from_branch_id, to_branch_id, items, user_id, notes=""):
         if not all([from_branch_id, to_branch_id, items]):
