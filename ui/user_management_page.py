@@ -15,6 +15,15 @@ ALLOWED_TO_MANAGE = {
 }
 
 # --- Helper Functions ---
+
+def _get_safe_role(user_data, default='staff'):
+    """Safely get user role, defaulting if it's missing, None, or not a string."""
+    if not user_data: return default
+    role = user_data.get('role')
+    if not isinstance(role, str) or not role.strip():
+        return default
+    return role
+
 def can_edit_user(current_user_role, target_user_role, is_self):
     """Check if the current user can edit the target user."""
     if is_self or current_user_role == target_user_role:
@@ -43,7 +52,7 @@ def show_edit_user_dialog(user_data, auth_mgr: AuthManager, branch_mgr: BranchMa
         # Role selection logic - Only admins can change roles
         is_admin = current_user_role == 'admin'
         editable_roles = ALLOWED_TO_MANAGE.get(current_user_role, [])
-        user_role = user_data.get('role', 'staff').lower()
+        user_role = _get_safe_role(user_data).lower()
 
         try:
             current_role_index = editable_roles.index(user_role)
@@ -142,7 +151,7 @@ def render_user_list(users, current_user, auth_mgr: AuthManager, branch_mgr: Bra
     """Displays the list of users with actions."""
     search_query = st.text_input("Tìm kiếm (theo tên hoặc username)", key="user_search").lower()
     
-    current_user_role = current_user.get('role', 'staff').lower()
+    current_user_role = _get_safe_role(current_user).lower()
     current_user_uid = current_user.get('uid')
     all_branches_map = {b['id']: b['name'] for b in branch_mgr.list_branches(active_only=False)}
 
@@ -151,7 +160,7 @@ def render_user_list(users, current_user, auth_mgr: AuthManager, branch_mgr: Bra
     allowed_to_see = ALLOWED_TO_MANAGE.get(current_user_role, [])
 
     for user in users:
-        user_role_lower = user.get('role', 'staff').lower()
+        user_role_lower = _get_safe_role(user).lower()
         is_self = user.get('uid') == current_user_uid
 
         can_see = (current_user_role == 'admin') or is_self or (user_role_lower in allowed_to_see)
@@ -162,7 +171,7 @@ def render_user_list(users, current_user, auth_mgr: AuthManager, branch_mgr: Bra
             if search_match:
                 visible_users.append(user)
 
-    visible_users.sort(key=lambda u: ROLES.index(u.get('role', 'staff').lower()), reverse=True)
+    visible_users.sort(key=lambda u: ROLES.index(_get_safe_role(u).lower()), reverse=True)
 
     # --- Display Header ---
     c = st.columns([0.2, 0.2, 0.15, 0.25, 0.2])
@@ -178,7 +187,7 @@ def render_user_list(users, current_user, auth_mgr: AuthManager, branch_mgr: Bra
     else:
         for user in visible_users:
             uid = user.get('uid')
-            user_role = user.get('role', 'staff').lower()
+            user_role = _get_safe_role(user).lower()
             is_self = (uid == current_user_uid)
             is_active = user.get("active", False)
             can_edit = can_edit_user(current_user_role, user_role, is_self)
@@ -233,7 +242,7 @@ def render_user_management_page(auth_mgr: AuthManager, branch_mgr: BranchManager
         st.warning("Vui lòng đăng nhập.")
         return
         
-    current_role = current_user.get('role', 'staff').lower()
+    current_role = _get_safe_role(current_user).lower()
 
     if current_role not in ['admin', 'manager', 'supervisor']:
         st.error("Bạn không có quyền truy cập chức năng này.")
