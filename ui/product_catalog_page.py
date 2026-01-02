@@ -8,14 +8,18 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
     st.header("🗂️ Danh mục Sản phẩm")
 
     user_info = auth_mgr.get_current_user_info()
-    if not user_info: st.warning("Vui lòng đăng nhập để xem."); return
+    if not user_info:
+        st.warning("Vui lòng đăng nhập để xem.")
+        return
 
     user_role = user_info.get('role', 'user')
     is_admin = user_role == 'admin'
     is_manager_or_admin = user_role in ['admin', 'manager']
 
-    if 'editing_product_id' not in st.session_state: st.session_state.editing_product_id = None
-    if 'deleting_product_id' not in st.session_state: st.session_state.deleting_product_id = None
+    if 'editing_product_id' not in st.session_state:
+        st.session_state.editing_product_id = None
+    if 'deleting_product_id' not in st.session_state:
+        st.session_state.deleting_product_id = None
 
     # --- TABS ---
     tab_titles = ["Quản lý Sản phẩm"] + (["Thiết lập Danh mục & Đơn vị"] if is_admin else [])
@@ -68,7 +72,8 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
                                 st.success(msg)
                                 st.session_state.editing_product_id = None
                                 st.rerun()
-                            else: st.error(msg)
+                            else:
+                                st.error(msg)
                     
                     if editing_product and cancel_col.form_submit_button("Hủy", type="secondary"):
                         st.session_state.editing_product_id = None
@@ -78,7 +83,9 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
         st.subheader("Toàn bộ sản phẩm trong danh mục")
         products = prod_mgr.get_all_products(show_inactive=True)
 
-        if not products: st.info("Chưa có sản phẩm nào."); return
+        if not products:
+            st.info("Chưa có sản phẩm nào.")
+            return
         
         cat_names = {c['id']: c['name'] for c in prod_mgr.get_categories()}
 
@@ -100,7 +107,7 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
             if p.get('image_id'):
                 p_cols[1].image(f"https://drive.google.com/uc?id={p['image_id']}", width=60)
             else:
-                p_cols[1].write("") # Keep it empty if no image
+                p_cols[1].image("assets/no-image.png", width=60) # Placeholder
 
             p_cols[2].write(p['name'])
             p_cols[3].write(cat_names.get(p.get('category_id'), "N/A"))
@@ -140,4 +147,66 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
     if is_admin and len(tabs) > 1:
         with tabs[1]:
             st.subheader("Thiết lập các thuộc tính sản phẩm")
-            # ... (settings code is unchanged)
+            
+            set_c1, set_c2 = st.columns(2)
+
+            # --- Category Settings ---
+            with set_c1:
+                st.markdown("##### **Danh mục**")
+                with st.form("new_category_form"):
+                    new_cat_name = st.text_input("Tên danh mục mới")
+                    new_cat_prefix = st.text_input("Tiền tố SKU (2-3 ký tự)", max_chars=3)
+                    if st.form_submit_button("➕ Thêm Danh mục"):
+                        if new_cat_name and new_cat_prefix:
+                            success, msg = prod_mgr.add_category(new_cat_name, new_cat_prefix)
+                            if success:
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                        else:
+                            st.warning("Vui lòng nhập đủ tên và tiền tố.")
+                
+                st.divider()
+                st.write("**Danh sách danh mục:**")
+                categories = prod_mgr.get_categories()
+                if not categories:
+                    st.info("Chưa có danh mục nào.")
+                else:
+                    for cat in categories:
+                        cat_cols = st.columns([3, 2, 1])
+                        cat_cols[0].write(cat['name'])
+                        cat_cols[1].code(cat.get('prefix', 'N/A'))
+                        if cat_cols[2].button("🗑️", key=f"del_cat_{cat['id']}", use_container_width=True):
+                            # Simple delete for now, can add confirmation later
+                            prod_mgr.delete_category(cat['id'])
+                            st.rerun()
+
+            # --- Unit Settings ---
+            with set_c2:
+                st.markdown("##### **Đơn vị tính**")
+                with st.form("new_unit_form"):
+                    new_unit_name = st.text_input("Tên đơn vị mới")
+                    if st.form_submit_button("➕ Thêm Đơn vị"):
+                        if new_unit_name:
+                            success, msg = prod_mgr.add_unit(new_unit_name)
+                            if success:
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                        else:
+                            st.warning("Vui lòng nhập tên đơn vị.")
+
+                st.divider()
+                st.write("**Danh sách đơn vị:**")
+                units = prod_mgr.get_units()
+                if not units:
+                    st.info("Chưa có đơn vị nào.")
+                else:
+                    for unit in units:
+                        unit_cols = st.columns([4, 1])
+                        unit_cols[0].write(unit['name'])
+                        if unit_cols[1].button("🗑️", key=f"del_unit_{unit['id']}", use_container_width=True):
+                            prod_mgr.delete_unit(unit['id'])
+                            st.rerun()

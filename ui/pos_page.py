@@ -1,4 +1,3 @@
-
 import streamlit as st
 from datetime import datetime
 from ui._utils import render_page_header, render_branch_selector
@@ -43,7 +42,7 @@ def render_product_gallery(pos_mgr, product_mgr, inventory_mgr, branch_id):
         if not filtered_products:
             st.info("Không tìm thấy sản phẩm phù hợp.")
         else:
-            # Display products in a grid, 3 columns is a good compromise for mobile vs desktop
+            # Display products in a grid
             cols = st.columns(3)
             for i, p in enumerate(filtered_products):
                 col = cols[i % 3]
@@ -52,17 +51,17 @@ def render_product_gallery(pos_mgr, product_mgr, inventory_mgr, branch_id):
 
                 stock_quantity = branch_inventory.get(sku, {}).get('quantity', 0)
                 
-                # Only display products that are in stock
                 if stock_quantity > 0:
                     with col.container(border=True, height=360):
-                        # Image with a placeholder
-                        image_url = p.get('image_url', 'https://via.placeholder.com/300x300.png?text=No+Image')
-                        st.image(image_url, use_column_width=True)
+                        # --- MODIFIED IMAGE LOGIC ---
+                        if p.get('image_id'):
+                            image_url = f"https://drive.google.com/uc?id={p['image_id']}"
+                            st.image(image_url, use_column_width=True)
+                        else:
+                            st.image("assets/no-image.png", use_column_width=True)
                         
-                        # Product Name
                         st.markdown(f"**{p['name']}**")
 
-                        # Price display logic
                         selling_price = p.get('selling_price', 0)
                         base_price = p.get('base_price') 
 
@@ -74,14 +73,11 @@ def render_product_gallery(pos_mgr, product_mgr, inventory_mgr, branch_id):
                             st.markdown(f"<span style='color: #D22B2B; font-weight: bold;'>{selling_price:,.0f}đ</span>", 
                                         unsafe_allow_html=True)
 
-                        # Stock and SKU
                         st.caption(f"Tồn kho: {stock_quantity}")
 
-                        # Add to cart button
                         if st.button("➕ Thêm", key=f"add_{sku}", use_container_width=True, type="primary"):
                             pos_mgr.add_item_to_cart(branch_id, p, stock_quantity)
                             st.rerun()
-
 
 def render_cart_view(cart_state, pos_mgr):
     """Displays the items currently in the cart."""
@@ -93,8 +89,12 @@ def render_cart_view(cart_state, pos_mgr):
         with st.container(border=True):
             col_img, col_details = st.columns([1, 4])
             with col_img:
-                image_url = item.get('image_url', 'https://via.placeholder.com/60')
-                st.image(image_url, width=60)
+                # --- MODIFIED IMAGE LOGIC ---
+                if item.get('image_id'):
+                    image_url = f"https://drive.google.com/uc?id={item['image_id']}"
+                    st.image(image_url, width=60)
+                else:
+                    st.image("assets/no-image.png", width=60)
 
             with col_details:
                 st.markdown(f"**{item['name']}** (`{sku}`)")
@@ -118,7 +118,7 @@ def render_cart_view(cart_state, pos_mgr):
                         else:
                             st.toast("Vượt quá tồn kho!", icon="⚠️")
 
-
+# ... (The rest of the file is unchanged) ...
 def render_checkout_panel(cart_state, customer_mgr, pos_mgr, branch_id):
     """Displays the customer selection, summary, and checkout button."""
     with st.container(border=True):
@@ -200,6 +200,9 @@ def render_pos_page(pos_mgr):
 
     initialize_pos_state(selected_branch_id)
 
+    # This part needs to be defined before being used in the tab title
+    branch_products = product_mgr.get_listed_products_for_branch(selected_branch_id)
+
     cart_state = pos_mgr.calculate_cart_state(
         cart_items=st.session_state.get('pos_cart', {}),
         customer_id=st.session_state.get('pos_customer', "-"),
@@ -209,8 +212,9 @@ def render_pos_page(pos_mgr):
     main_col, order_col = st.columns([0.6, 0.4])
 
     with main_col:
-        tab_gallery, tab_cart = st.tabs([f"Thư viện Sản phẩm ({len(branch_products)})" if 'branch_products' in locals() else "Thư viện Sản phẩm", f"Đơn hàng ({cart_state['total_items']})"])
+        tab_gallery, tab_cart = st.tabs([f"Thư viện Sản phẩm ({len(branch_products)})", f"Đơn hàng ({cart_state['total_items']})"])
         with tab_gallery:
+            # We pass the already fetched branch_products to avoid a second call
             render_product_gallery(pos_mgr, product_mgr, inventory_mgr, selected_branch_id)
         with tab_cart:
             render_cart_view(cart_state, pos_mgr)
