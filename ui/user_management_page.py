@@ -235,7 +235,7 @@ def render_user_list(users, current_user, auth_mgr: AuthManager, branch_mgr: Bra
 
 
 def render_user_management_page(auth_mgr: AuthManager, branch_mgr: BranchManager):
-    render_page_header("Quản lý Người dùng", "👥")
+    render_page_header("✅ [ĐÃ SỬA] Quản lý Người dùng", "👥")
 
     current_user = auth_mgr.get_current_user_info()
     if not current_user:
