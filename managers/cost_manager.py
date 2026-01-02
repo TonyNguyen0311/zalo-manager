@@ -6,8 +6,8 @@ import streamlit as st
 from google.cloud import firestore
 from dateutil.relativedelta import relativedelta
 
-# Corrected import path
-from .image_handler import ImageHandler
+# Corrected import path to be absolute
+from managers.image_handler import ImageHandler
 
 class CostManager:
     def __init__(self, firebase_client):
@@ -91,12 +91,10 @@ class CostManager:
             return [source_entry_data]
 
     def get_cost_entry(self, entry_id):
-        # ... (no changes needed)
         doc = self.entry_col.document(entry_id).get()
         return doc.to_dict() if doc.exists else None
 
     def query_cost_entries(self, filters=None):
-        # ... (no changes needed)
         try:
             all_entries = [doc.to_dict() for doc in self.entry_col.stream()]
         except Exception as e:
@@ -110,7 +108,6 @@ class CostManager:
         return filtered_entries
 
     def _entry_matches_filters(self, entry, filters):
-        # ... (no changes needed)
         if filters.get('branch_ids') and entry.get('branch_id') not in filters['branch_ids']:
             return False
         if filters.get('branch_id') and entry.get('branch_id') != filters['branch_id']:
@@ -126,7 +123,6 @@ class CostManager:
         return True
 
     def create_allocation_rule(self, rule_name, description, splits):
-        # ... (no changes needed)
         total_percentage = sum(item['percentage'] for item in splits)
         if total_percentage != 100:
             raise ValueError(f"Tổng tỷ lệ phần trăm phải bằng 100, hiện tại là {total_percentage}%.")
@@ -136,12 +132,10 @@ class CostManager:
         })
 
     def get_allocation_rules(self):
-        # ... (no changes needed)
         return [doc.to_dict() for doc in self.allocation_rules_col.order_by("name").stream()]
 
     @firestore.transactional
     def _apply_allocation_transaction(self, transaction, source_entry_id, rule_id, user_id):
-        # ... (no changes needed)
         source_ref = self.entry_col.document(source_entry_id)
         source_doc = source_ref.get(transaction=transaction).to_dict()
         if source_doc.get('status') == 'ALLOCATED': raise Exception("Chi phí này đã được phân bổ.")
@@ -167,6 +161,5 @@ class CostManager:
         transaction.update(source_ref, {'status': 'ALLOCATED', 'notes': f"Đã phân bổ theo quy tắc {rule['name']}"})
 
     def apply_allocation(self, source_entry_id, rule_id, user_id):
-        # ... (no changes needed)
         transaction = self.db.transaction()
         self._apply_allocation_transaction(transaction, source_entry_id, rule_id, user_id)

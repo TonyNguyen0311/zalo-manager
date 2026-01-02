@@ -6,10 +6,10 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
 from google.cloud.firestore_v1.base_query import And, FieldFilter
 
-# Corrected import path
-from .image_handler import ImageHandler 
-from .category_manager import CategoryManager
-from .unit_manager import UnitManager
+# Corrected import paths to be absolute from the project root
+from managers.image_handler import ImageHandler 
+from managers.category_manager import CategoryManager
+from managers.unit_manager import UnitManager
 
 class ProductManager:
     def __init__(self, firebase_client):
