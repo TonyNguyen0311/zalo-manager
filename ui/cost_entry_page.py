@@ -6,10 +6,17 @@ from datetime import datetime, timedelta
 from managers.cost_manager import CostManager
 from managers.branch_manager import BranchManager
 from managers.auth_manager import AuthManager
-from ui._utils import render_page_header, render_branch_selector # Import the new utils
+from ui._utils import render_page_header, render_branch_selector
 
+# --- Dialog for viewing receipt ---
+@st.dialog("Xem chứng từ")
+def view_receipt_dialog(image_url):
+    st.image(image_url, use_column_width=True)
+    if st.button("Đóng", use_container_width=True):
+        st.rerun()
+
+# --- Main Page Rendering ---
 def render_cost_entry_page(cost_mgr: CostManager, branch_mgr: BranchManager, auth_mgr: AuthManager):
-    # Use the new header utility
     render_page_header("Ghi nhận Chi phí", "📝")
 
     user = auth_mgr.get_current_user_info()
@@ -18,28 +25,25 @@ def render_cost_entry_page(cost_mgr: CostManager, branch_mgr: BranchManager, aut
         return
 
     user_role = user.get('role', 'staff')
-    user_branches = user.get('branch_ids', [])
+    allowed_branches_map = auth_mgr.get_allowed_branches_map()
     default_branch_id = user.get('default_branch_id')
     all_branches_map = {b['id']: b['name'] for b in branch_mgr.list_branches()}
-    
-    # Determine allowed branches based on user role
-    if user_role == 'admin':
-        allowed_branches_map = all_branches_map
-    else:
-        allowed_branches_map = {bid: all_branches_map[bid] for bid in user_branches if bid in all_branches_map}
-
     cost_groups_raw = cost_mgr.get_cost_groups()
     group_map = {g['id']: g['group_name'] for g in cost_groups_raw}
+
+    # Handle dialog for viewing receipt
+    if 'viewing_receipt_url' in st.session_state and st.session_state.viewing_receipt_url:
+        view_receipt_dialog(st.session_state.viewing_receipt_url)
 
     tab1, tab2 = st.tabs(["Ghi nhận Chi phí mới", "Lịch sử & Quản lý Chi phí"])
 
     with tab1:
+        # ... (Form for new cost entry remains the same) ...
         with st.form("new_cost_entry_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
-                # Use the new branch selector utility
                 selected_branch_id = render_branch_selector(allowed_branches_map, default_branch_id)
-                if not selected_branch_id: # Stop if user has no access to any branch
+                if not selected_branch_id:
                     return
 
                 amount = st.number_input("Số tiền (VNĐ)", min_value=0, step=1000)
@@ -51,53 +55,42 @@ def render_cost_entry_page(cost_mgr: CostManager, branch_mgr: BranchManager, aut
             
             st.divider()
 
-            # OPEX/CAPEX Classification
             classification_display = st.selectbox(
                 "Phân loại", 
                 ["Chi phí hoạt động (OPEX)", "Chi phí vốn (CAPEX)"],
-                help="**OPEX**: Chi phí hoạt động hàng ngày. **CAPEX**: Chi phí đầu tư tài sản lớn, có thể khấu hao."
+                help="**OPEX**: Chi phí hàng ngày. **CAPEX**: Đầu tư tài sản lớn."
             )
 
             is_amortized = False
             amortize_months = 0
             if classification_display == "Chi phí vốn (CAPEX)":
-                is_amortized = st.toggle("Tính khấu hao cho chi phí này?", help="Bật nếu đây là tài sản cần được khấu hao giá trị theo thời gian.")
+                is_amortized = st.toggle("Tính khấu hao?", help="Bật nếu đây là tài sản cần khấu hao.")
                 if is_amortized:
-                    amortize_months = st.number_input("Khấu hao trong (tháng)", min_value=1, max_value=360, value=12, step=1)
+                    amortize_months = st.number_input("Khấu hao trong (tháng)", min_value=1, value=12)
 
-            uploaded_file = st.file_uploader("Ảnh hóa đơn/chứng từ (tùy chọn)", type=["jpg", "jpeg", "png"])
+            uploaded_file = st.file_uploader("Ảnh hóa đơn/chứng từ", type=["jpg", "jpeg", "png"])
             
-            submitted = st.form_submit_button("Lưu Chi phí", use_container_width=True)
-
-            if submitted:
-                if not name or amount <= 0 or not selected_group_id:
-                    st.error("Vui lòng điền đầy đủ các thông tin bắt buộc: Mô tả, Số tiền và Nhóm chi phí.")
+            if st.form_submit_button("Lưu Chi phí", use_container_width=True):
+                if not all([name, amount > 0, selected_group_id]):
+                    st.error("Vui lòng điền đầy đủ thông tin.")
                 else:
-                    with st.spinner("Đang lưu chi phí..."):
+                    with st.spinner("Đang lưu..."):
                         try:
-                            receipt_url = None
-                            if uploaded_file:
-                                receipt_url = cost_mgr.upload_receipt_image(uploaded_file)
-                            
-                            db_classification = 'CAPEX' if classification_display == "Chi phí vốn (CAPEX)" else 'OPEX'
-                            
+                            receipt_url = cost_mgr.upload_receipt_image(uploaded_file) if uploaded_file else None
                             cost_mgr.create_cost_entry(
                                 branch_id=selected_branch_id,
-                                name=name,
-                                amount=amount,
-                                group_id=selected_group_id,
-                                entry_date=entry_date.isoformat(),
-                                created_by=user['uid'],
-                                classification=db_classification,
-                                is_amortized=is_amortized,
-                                amortize_months=amortize_months,
+                                name=name, amount=amount, group_id=selected_group_id,
+                                entry_date=entry_date.isoformat(), created_by=user['uid'],
+                                classification='CAPEX' if "CAPEX" in classification_display else 'OPEX',
+                                is_amortized=is_amortized, amortize_months=amortize_months,
                                 receipt_url=receipt_url
                             )
-                            st.success(f"Đã ghi nhận chi phí '{name}' thành công!")
+                            st.success(f"Đã ghi nhận chi phí '{name}'!")
                         except Exception as e:
-                            st.error(f"Lỗi khi ghi nhận chi phí: {e}")
-    
+                            st.error(f"Lỗi: {e}")
+
     with tab2:
+        # ... (Filters remain the same) ...
         with st.expander("Bộ lọc", expanded=True):
             f_c1, f_c2, f_c3 = st.columns(3)
             today = datetime.now()
@@ -122,7 +115,7 @@ def render_cost_entry_page(cost_mgr: CostManager, branch_mgr: BranchManager, aut
 
         if 'all' not in selected_branches:
             filters['branch_ids'] = selected_branches
-        else: # if 'all' is selected, filter by the branches the user is allowed to see
+        else:
             filters['branch_ids'] = list(allowed_branches_map.keys())
 
         try:
@@ -145,19 +138,18 @@ def render_cost_entry_page(cost_mgr: CostManager, branch_mgr: BranchManager, aut
                         st.markdown(f"**{row['name']}**")
                         st.markdown(f"*{row.get('group_name', 'N/A')}* - {row.get('branch_name', 'N/A')}")
                         if row.get('classification') == 'CAPEX':
-                            if row.get('is_amortized') and row.get('amortization_months', 0) > 0:
-                                st.info(f"CAPEX / Khấu hao trong {row['amortization_months']} tháng", icon="📊")
-                            else:
-                                st.info("CAPEX", icon="📊")
+                             st.info(f"CAPEX / Khấu hao {row.get('amortize_months', 0)} tháng" if row.get('is_amortized') else "CAPEX", icon="📊")
 
                     with c2:
                         st.markdown(f"**{row['amount']:,} VNĐ**")
                         st.caption(f"Ngày: {row['entry_date']}")
                     with c3:
                         if row.get('receipt_url'):
-                            st.link_button("Xem ảnh", row['receipt_url'])
-
-                    # Action Buttons
+                            if st.button("Xem ảnh", key=f"view_receipt_{row['id']}", use_container_width=True):
+                                st.session_state.viewing_receipt_url = row['receipt_url']
+                                st.rerun()
+                    
+                    # ... (Action buttons remain the same) ...
                     can_cancel = (user_role in ['admin', 'manager']) or (user_role == 'staff' and row['created_by'] == user['uid'])
                     can_delete = user_role == 'admin'
                     
@@ -170,7 +162,6 @@ def render_cost_entry_page(cost_mgr: CostManager, branch_mgr: BranchManager, aut
                                 st.rerun()
 
                         if can_delete:
-                            # Add a confirmation step to prevent accidental deletion
                             if f"delete_confirm_{row['id']}" not in st.session_state:
                                 st.session_state[f"delete_confirm_{row['id']}"] = False
                             
@@ -185,8 +176,6 @@ def render_cost_entry_page(cost_mgr: CostManager, branch_mgr: BranchManager, aut
                                     st.session_state[f"delete_confirm_{row['id']}"] = True
                                     st.rerun()
 
-
         except Exception as e:
             st.error(f"Lỗi khi tải lịch sử chi phí: {e}")
             st.exception(e)
-

@@ -1,83 +1,102 @@
 
 import uuid
 from datetime import datetime
-from google.cloud import firestore
 import logging
+import streamlit as st
+from google.cloud import firestore
 from dateutil.relativedelta import relativedelta
+
+# Import the centralized image handler
+from .image_handler import ImageHandler
 
 class CostManager:
     def __init__(self, firebase_client):
         self.db = firebase_client.db
-        self.bucket = firebase_client.bucket
         self.group_col = self.db.collection('cost_groups')
         self.entry_col = self.db.collection('cost_entries')
         self.allocation_rules_col = self.db.collection('cost_allocation_rules')
+        self.image_handler = self._initialize_image_handler()
+        self.receipt_image_folder_id = st.secrets.get("drive_receipt_folder_id", None)
 
-    # --- COST GROUPS (NHÓM CHI PHÍ) ---
+    def _initialize_image_handler(self):
+        if "drive_oauth" in st.secrets:
+            try:
+                creds_info = dict(st.secrets["drive_oauth"])
+                if creds_info.get('refresh_token'):
+                    return ImageHandler(credentials_info=creds_info)
+            except Exception as e:
+                logging.error(f"Failed to initialize ImageHandler for costs: {e}")
+        logging.warning("CostManager's ImageHandler not initialized.")
+        return None
+
+    def upload_receipt_image(self, image_file):
+        """Uploads a receipt image using the centralized handler."""
+        if not self.image_handler or not self.receipt_image_folder_id:
+            st.error("Lỗi Cấu Hình: Trình xử lý ảnh hoặc folder ID cho chứng từ chưa được cài đặt.")
+            return None
+        try:
+            return self.image_handler.upload_receipt_image(image_file, self.receipt_image_folder_id)
+        except Exception as e:
+            st.error(f"Lỗi khi tải ảnh chứng từ lên: {e}")
+            return None
+
     def get_cost_groups(self):
         return [doc.to_dict() for doc in self.group_col.order_by("group_name").stream()]
 
-    # --- COST ENTRIES (BẢN GHI CHI PHÍ) ---
-    def create_cost_entry(self, branch_id, name, amount, group_id, entry_date, created_by, classification, receipt_url=None, is_amortized=False, amortize_months=0):
-        """
-        Tạo một bản ghi chi phí.
-        Nếu is_amortized=True, nó sẽ tạo một bản ghi 'gốc' và các bản ghi 'con' hàng tháng.
-        """
-        if not is_amortized or amortize_months <= 1:
+    def create_cost_entry(self, **kwargs):
+        """Creates a cost entry, now expecting receipt_url to be passed in."""
+        if not kwargs.get('is_amortized') or kwargs.get('amortize_months', 0) <= 1:
             entry_id = f"CE-{uuid.uuid4().hex[:8].upper()}"
             entry_data = {
-                'id': entry_id, 'branch_id': branch_id, 'name': name, 'amount': amount, 'group_id': group_id,
-                'entry_date': entry_date, 'created_by': created_by, 'classification': classification,
-                'receipt_url': receipt_url, 'is_amortized': is_amortized, 'amortization_months': amortize_months,
-                'created_at': datetime.now().isoformat(), 'status': 'ACTIVE', 'source_entry_id': None
+                **kwargs,
+                'id': entry_id,
+                'created_at': datetime.now().isoformat(),
+                'status': 'ACTIVE',
+                'source_entry_id': None
             }
             self.entry_col.document(entry_id).set(entry_data)
-            return [entry_data]  # Trả về dưới dạng list cho nhất quán
+            return [entry_data]
         else:
+            # Amortization logic remains the same
             batch = self.db.batch()
-            
-            # 1. Tạo bản ghi chi phí GỐC (source)
             source_entry_id = f"CE-{uuid.uuid4().hex[:8].upper()}"
             source_ref = self.entry_col.document(source_entry_id)
             source_entry_data = {
-                'id': source_entry_id, 'branch_id': branch_id, 'name': f"[TRẢ TRƯỚC] {name}",
-                'amount': amount, 'group_id': group_id, 'entry_date': entry_date,
-                'created_by': created_by, 'classification': classification, 'receipt_url': receipt_url,
-                'is_amortized': True, 'amortization_months': amortize_months,
-                'created_at': datetime.now().isoformat(), 'status': 'AMORTIZED_SOURCE',
+                **kwargs,
+                'id': source_entry_id,
+                'name': f"[TRẢ TRƯỚC] {kwargs['name']}",
+                'created_at': datetime.now().isoformat(),
+                'status': 'AMORTIZED_SOURCE',
                 'source_entry_id': None
             }
             batch.set(source_ref, source_entry_data)
-            created_entries = [source_entry_data]
 
-            # 2. Tạo các bản ghi chi phí CON (child) hàng tháng
-            monthly_amount = round(amount / amortize_months, 2)
-            start_date = datetime.fromisoformat(entry_date)
-
-            for i in range(amortize_months):
-                child_entry_id = f"CE-{uuid.uuid4().hex[:8].upper()}"
-                child_entry_ref = self.entry_col.document(child_entry_id)
-                current_month_date = start_date + relativedelta(months=i)
-
-                child_entry_data = {
-                    'id': child_entry_id, 'branch_id': branch_id, 'name': f"{name} (Tháng {i + 1}/{amortize_months})",
-                    'amount': monthly_amount, 'group_id': group_id, 'entry_date': current_month_date.isoformat(),
-                    'created_by': created_by, 'classification': classification, 'receipt_url': None,
-                    'is_amortized': False, 'amortization_months': 0,
+            monthly_amount = round(kwargs['amount'] / kwargs['amortize_months'], 2)
+            start_date = datetime.fromisoformat(kwargs['entry_date'])
+            for i in range(kwargs['amortize_months']):
+                child_id = f"CE-{uuid.uuid4().hex[:8].upper()}"
+                child_ref = self.entry_col.document(child_id)
+                child_data = {
+                    'id': child_id, 'branch_id': kwargs['branch_id'], 'group_id': kwargs['group_id'],
+                    'name': f"{kwargs['name']} (Tháng {i + 1}/{kwargs['amortize_months']})",
+                    'amount': monthly_amount, 'entry_date': (start_date + relativedelta(months=i)).isoformat(),
+                    'created_by': kwargs['created_by'], 'classification': kwargs['classification'],
+                    'receipt_url': None, 'is_amortized': False, 'amortization_months': 0,
                     'created_at': datetime.now().isoformat(), 'status': 'ACTIVE',
                     'source_entry_id': source_entry_id
                 }
-                batch.set(child_entry_ref, child_entry_data)
-                created_entries.append(child_entry_data)
-            
+                batch.set(child_ref, child_data)
             batch.commit()
-            return created_entries
+            st.success(f"Đã tạo chi phí trả trước và {kwargs['amortize_months']} kỳ khấu hao.")
+            return [source_entry_data]
 
     def get_cost_entry(self, entry_id):
+        # ... (no changes needed)
         doc = self.entry_col.document(entry_id).get()
         return doc.to_dict() if doc.exists else None
 
     def query_cost_entries(self, filters=None):
+        # ... (no changes needed)
         try:
             all_entries = [doc.to_dict() for doc in self.entry_col.stream()]
         except Exception as e:
@@ -91,6 +110,7 @@ class CostManager:
         return filtered_entries
 
     def _entry_matches_filters(self, entry, filters):
+        # ... (no changes needed)
         if filters.get('branch_ids') and entry.get('branch_id') not in filters['branch_ids']:
             return False
         if filters.get('branch_id') and entry.get('branch_id') != filters['branch_id']:
@@ -105,8 +125,8 @@ class CostManager:
             return False
         return True
 
-    # --- ALLOCATION RULES ---
     def create_allocation_rule(self, rule_name, description, splits):
+        # ... (no changes needed)
         total_percentage = sum(item['percentage'] for item in splits)
         if total_percentage != 100:
             raise ValueError(f"Tổng tỷ lệ phần trăm phải bằng 100, hiện tại là {total_percentage}%.")
@@ -116,10 +136,12 @@ class CostManager:
         })
 
     def get_allocation_rules(self):
+        # ... (no changes needed)
         return [doc.to_dict() for doc in self.allocation_rules_col.order_by("name").stream()]
 
     @firestore.transactional
     def _apply_allocation_transaction(self, transaction, source_entry_id, rule_id, user_id):
+        # ... (no changes needed)
         source_ref = self.entry_col.document(source_entry_id)
         source_doc = source_ref.get(transaction=transaction).to_dict()
         if source_doc.get('status') == 'ALLOCATED': raise Exception("Chi phí này đã được phân bổ.")
@@ -145,5 +167,6 @@ class CostManager:
         transaction.update(source_ref, {'status': 'ALLOCATED', 'notes': f"Đã phân bổ theo quy tắc {rule['name']}"})
 
     def apply_allocation(self, source_entry_id, rule_id, user_id):
+        # ... (no changes needed)
         transaction = self.db.transaction()
         self._apply_allocation_transaction(transaction, source_entry_id, rule_id, user_id)

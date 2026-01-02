@@ -6,10 +6,10 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
 from google.cloud.firestore_v1.base_query import And, FieldFilter
 
-# These managers are now self-contained
-from .product.category_manager import CategoryManager
-from .product.unit_manager import UnitManager
-from .product.image_handler import ImageHandler
+# Updated import to the centralized handler
+from ..image_handler import ImageHandler 
+from .category_manager import CategoryManager
+from .unit_manager import UnitManager
 
 class ProductManager:
     def __init__(self, firebase_client):
@@ -18,18 +18,17 @@ class ProductManager:
         self.category_manager = CategoryManager(self.db)
         self.unit_manager = UnitManager(self.db)
         self.image_handler = self._initialize_image_handler()
+        # Store the specific folder ID for products
+        self.product_image_folder_id = st.secrets.get("drive_product_folder_id", None)
 
     def _initialize_image_handler(self):
-        logging.info("Attempting to initialize ImageHandler using OAuth 2.0...")
-        if "drive_oauth" in st.secrets and "drive_folder_id" in st.secrets:
+        if "drive_oauth" in st.secrets:
             try:
                 creds_info = dict(st.secrets["drive_oauth"])
-                folder_id = st.secrets["drive_folder_id"]
-                if folder_id and creds_info.get('refresh_token'):
-                    logging.info("Google Drive OAuth credentials and folder ID found. Initializing ImageHandler.")
-                    return ImageHandler(credentials_info=creds_info, folder_id=folder_id)
+                if creds_info.get('refresh_token'):
+                    return ImageHandler(credentials_info=creds_info)
             except Exception as e:
-                logging.error(f"Failed to initialize ImageHandler via OAuth: {e}")
+                logging.error(f"Failed to initialize ImageHandler: {e}")
         logging.warning("ImageHandler not initialized. Check secrets.")
         return None
 
@@ -39,31 +38,29 @@ class ProductManager:
     def create_unit(self, name): return self.unit_manager.create_unit(name)
 
     def _handle_image_update(self, sku, image_file, delete_image_flag):
-        """Handles creating, updating, or deleting a product image."""
-        if not self.image_handler:
-            st.error("Lỗi Cấu Hình: Trình xử lý ảnh không được khởi tạo.")
+        if not self.image_handler or not self.product_image_folder_id:
+            st.error("Lỗi Cấu Hình: Trình xử lý ảnh hoặc folder ID cho sản phẩm chưa được cài đặt.")
             return
         
-        # If delete flag is set, delete the image and clear the ID
+        filename = f"{sku}.jpg"
         if delete_image_flag:
             try:
-                self.image_handler.delete_image(sku)
-                self.collection.document(sku).update({"image_id": ""})
+                self.image_handler.delete_image_by_filename(self.product_image_folder_id, filename)
+                self.collection.document(sku).update({"image_url": ""}) # Use image_url now
                 st.info(f"Đã xóa ảnh cho sản phẩm {sku}.")
             except Exception as e:
                 st.error(f"Lỗi khi xóa ảnh: {e}")
-            return # Stop further processing
+            return
 
-        # If a new image file is provided, upload it
         if image_file:
             try:
-                st.info(f"Đang tải ảnh lên cho SKU: {sku}...")
-                image_id = self.image_handler.upload_image(image_file, sku)
-                if image_id:
-                    self.collection.document(sku).update({'image_id': image_id})
+                st.info(f"Đang tải ảnh sản phẩm lên cho SKU: {sku}...")
+                image_url = self.image_handler.upload_product_image(image_file, self.product_image_folder_id, sku)
+                if image_url:
+                    self.collection.document(sku).update({'image_url': image_url})
                     st.success(f"Đã cập nhật ảnh cho sản phẩm {sku}.")
                 else:
-                    st.error("Tải ảnh lên thất bại. Không nhận được ID ảnh.")
+                    st.error("Tải ảnh lên thất bại.")
             except Exception as e:
                 st.error(f"Lỗi trong quá trình tải ảnh lên: {e}")
 
@@ -79,7 +76,7 @@ class ProductManager:
             sku = f"{prefix}-{str(new_seq).zfill(4)}"
 
             product_data.update({
-                'sku': sku, 'active': True, 'image_id': "",
+                'sku': sku, 'active': True, 'image_url': "",
                 'created_at': firestore.SERVER_TIMESTAMP,
                 'updated_at': firestore.SERVER_TIMESTAMP
             })
@@ -104,10 +101,8 @@ class ProductManager:
         delete_image_flag = updates.pop('delete_image', False)
 
         try:
-            # Handle image changes first
             self._handle_image_update(sku, image_file_to_upload, delete_image_flag)
 
-            # Update other fields if there are any
             if updates:
                 updates['updated_at'] = firestore.SERVER_TIMESTAMP
                 self.collection.document(sku).update(updates)
@@ -122,9 +117,9 @@ class ProductManager:
 
     def hard_delete_product(self, sku):
         try:
-            # Ensure image is deleted from Drive before deleting the document
-            if self.image_handler:
-                self.image_handler.delete_image(sku)
+            if self.image_handler and self.product_image_folder_id:
+                filename = f"{sku}.jpg"
+                self.image_handler.delete_image_by_filename(self.product_image_folder_id, filename)
             self.collection.document(sku).delete()
             return True, f"Sản phẩm {sku} đã được xóa vĩnh viễn."
         except Exception as e:
@@ -141,7 +136,6 @@ class ProductManager:
             return []
 
     def list_products(self, show_inactive=False):
-        """Returns a list of all products. Alias for get_all_products."""
         return self.get_all_products(show_inactive)
     
     def get_product_by_sku(self, sku):
@@ -161,3 +155,4 @@ class ProductManager:
         except Exception as e:
             logging.error(f"Error in get_listed_products_for_branch: {e}")
             return []
+
