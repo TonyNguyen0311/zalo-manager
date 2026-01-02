@@ -53,12 +53,9 @@ def render_product_gallery(pos_mgr, product_mgr, inventory_mgr, branch_id):
                 
                 if stock_quantity > 0:
                     with col.container(border=True, height=360):
-                        # --- MODIFIED IMAGE LOGIC ---
-                        if p.get('image_id'):
-                            image_url = f"https://drive.google.com/uc?id={p['image_id']}"
-                            st.image(image_url, use_column_width=True)
-                        else:
-                            st.image("assets/no-image.png", use_column_width=True)
+                        # --- REFACTORED IMAGE LOGIC ---
+                        image_url = product_mgr.image_handler.get_public_view_url(p.get('image_id'))
+                        st.image(image_url, use_column_width=True)
                         
                         st.markdown(f"**{p['name']}**")
 
@@ -79,7 +76,7 @@ def render_product_gallery(pos_mgr, product_mgr, inventory_mgr, branch_id):
                             pos_mgr.add_item_to_cart(branch_id, p, stock_quantity)
                             st.rerun()
 
-def render_cart_view(cart_state, pos_mgr):
+def render_cart_view(cart_state, pos_mgr, product_mgr):
     """Displays the items currently in the cart."""
     if not cart_state['items']:
         st.info("Giỏ hàng đang trống. Hãy chọn sản phẩm từ Thư viện.")
@@ -89,12 +86,9 @@ def render_cart_view(cart_state, pos_mgr):
         with st.container(border=True):
             col_img, col_details = st.columns([1, 4])
             with col_img:
-                # --- MODIFIED IMAGE LOGIC ---
-                if item.get('image_id'):
-                    image_url = f"https://drive.google.com/uc?id={item['image_id']}"
-                    st.image(image_url, width=60)
-                else:
-                    st.image("assets/no-image.png", width=60)
+                # --- REFACTORED IMAGE LOGIC ---
+                image_url = product_mgr.image_handler.get_public_view_url(item.get('image_id'))
+                st.image(image_url, width=60)
 
             with col_details:
                 st.markdown(f"**{item['name']}** (`{sku}`)")
@@ -217,7 +211,7 @@ def render_pos_page(pos_mgr):
             # We pass the already fetched branch_products to avoid a second call
             render_product_gallery(pos_mgr, product_mgr, inventory_mgr, selected_branch_id)
         with tab_cart:
-            render_cart_view(cart_state, pos_mgr)
+            render_cart_view(cart_state, pos_mgr, product_mgr)
 
     with order_col:
         render_checkout_panel(cart_state, customer_mgr, pos_mgr, selected_branch_id)

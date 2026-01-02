@@ -59,6 +59,8 @@ class ImageHandler:
         try:
             file_id_to_update = None
             if update_existing:
+                # NOTE: Searching by filename is kept for now, but it can be unreliable.
+                # A better approach is to pass the existing file_id when updating.
                 query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
                 response = self.drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
                 if response.get('files'):
@@ -76,7 +78,8 @@ class ImageHandler:
             
             if file_id:
                 self.drive_service.permissions().create(fileId=file_id, body={'type': 'anyone', 'role': 'reader'}).execute()
-                return f"https://drive.google.com/uc?export=view&id={file_id}"
+                # SUCCESS: Return the file_id as requested
+                return file_id
             return None
 
         except HttpError as error:
@@ -84,24 +87,37 @@ class ImageHandler:
             raise Exception(f"Lỗi khi tải ảnh lên Drive: {error}")
 
     def upload_product_image(self, image_file, folder_id, product_sku):
+        """Uploads a product image and returns the Google Drive file_id."""
         filename = f"{product_sku}.jpg"
         optimized_image_bytes = self._optimize_image(image_file, max_width=800, quality=85)
+        # This will now return file_id
         return self._upload_to_drive(folder_id, filename, optimized_image_bytes, update_existing=True)
 
     def upload_receipt_image(self, image_file, folder_id):
+        """Uploads a receipt image and returns the Google Drive file_id."""
         filename = f"receipt_{uuid.uuid4().hex[:12]}.jpg"
         optimized_image_bytes = self._optimize_image(image_file, max_width=1200, quality=80)
+        # This will now return file_id
         return self._upload_to_drive(folder_id, filename, optimized_image_bytes, update_existing=False)
 
-    def delete_image_by_filename(self, folder_id, filename):
-        if not self.drive_service:
+    @staticmethod
+    def get_public_view_url(file_id):
+        """Constructs a public, direct view URL for a Google Drive file."""
+        if not file_id:
+            # Return path to local placeholder image
+            return "assets/no-image.png"
+        return f"https://drive.google.com/uc?id={file_id}"
+
+    def delete_image_by_id(self, file_id):
+        """Deletes a file from Google Drive using its file_id."""
+        if not self.drive_service or not file_id:
+            logger.warning("Drive service not initialized or file_id is missing. Cannot delete.")
             return
         try:
-            query = f"name='{filename}' and '{folder_id}' in parents and trashed=false"
-            response = self.drive_service.files().list(q=query, spaces='drive', fields='files(id)').execute()
-            if files := response.get('files', []):
-                file_id = files[0].get('id')
-                self.drive_service.files().delete(fileId=file_id).execute()
-                logger.info(f"Deleted '{filename}' from Drive.")
+            self.drive_service.files().delete(fileId=file_id).execute()
+            logger.info(f"Deleted file with ID '{file_id}' from Drive.")
         except HttpError as e:
-            logger.error(f"Error deleting '{filename}': {e}")
+            if e.resp.status == 404:
+                logger.warning(f"Attempted to delete file with ID '{file_id}', but it was not found.")
+            else:
+                logger.error(f"Error deleting file with ID '{file_id}': {e}")

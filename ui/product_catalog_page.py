@@ -50,11 +50,14 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
                     
                     st.write("Ảnh sản phẩm:")
                     delete_image = False
-                    if editing_product and editing_product.get('image_id'):
-                        st.image(f"https://drive.google.com/uc?id={editing_product['image_id']}", width=150)
+                    
+                    # --- REFACTORED IMAGE LOGIC ---
+                    image_id_to_edit = editing_product.get('image_id') if editing_product else None
+                    image_url_to_edit = prod_mgr.image_handler.get_public_view_url(image_id_to_edit)
+                    st.image(image_url_to_edit, width=150)
+                    
+                    if image_id_to_edit:
                         delete_image = st.checkbox("Xóa ảnh này và không thay thế", key=f"delete_img_{editing_product['id']}")
-                    else:
-                        st.image("assets/no-image.png", width=150)
 
                     image_file = st.file_uploader("Tải ảnh mới (chỉ 1 ảnh, để trống nếu không đổi)", type=['png', 'jpg', 'jpeg'])
 
@@ -107,10 +110,9 @@ def render_product_catalog_page(prod_mgr: ProductManager, auth_mgr: AuthManager)
             p_cols = st.columns([1, 1, 4, 2, 1, 2])
             p_cols[0].write(p['sku'])
             
-            if p.get('image_id'):
-                p_cols[1].image(f"https://drive.google.com/uc?id={p['image_id']}", width=60)
-            else:
-                p_cols[1].image("assets/no-image.png", width=60)
+            # --- REFACTORED IMAGE LOGIC ---
+            image_url = prod_mgr.image_handler.get_public_view_url(p.get('image_id'))
+            p_cols[1].image(image_url, width=60)
 
             p_cols[2].write(p['name'])
             p_cols[3].write(cat_names.get(p.get('category_id'), "N/A"))
