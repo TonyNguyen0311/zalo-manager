@@ -298,3 +298,34 @@ class AuthManager:
         data['updated_at'] = datetime.now(timezone.utc).isoformat()
         self.users_col.document(uid).update(data)
         return True
+
+    def get_allowed_branches_map(self):
+        """
+        Returns a dictionary of branch_id: branch_name that the current user
+        is allowed to access.
+        """
+        if 'branch_mgr' not in st.session_state:
+            st.error("Branch Manager is not available.")
+            return {}
+
+        branch_mgr = st.session_state.branch_mgr
+        user_info = self.get_current_user_info()
+
+        if not user_info:
+            return {}
+
+        user_role = user_info.get('role', 'staff').lower()
+        
+        all_branches = branch_mgr.list_branches()
+        all_branches_map = {b['id']: b['name'] for b in all_branches}
+
+        if user_role == 'admin':
+            return all_branches_map
+        else:
+            user_branch_ids = user_info.get('branch_ids', [])
+            allowed_map = {
+                branch_id: all_branches_map.get(branch_id, "Unknown Branch")
+                for branch_id in user_branch_ids
+                if branch_id in all_branches_map
+            }
+            return allowed_map
