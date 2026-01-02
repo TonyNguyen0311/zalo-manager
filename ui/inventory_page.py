@@ -42,7 +42,7 @@ def render_inventory_page(inv_mgr: InventoryManager, prod_mgr: ProductManager, b
     @st.cache_data(ttl=120) # Cache for 2 minutes to improve performance
     def load_data(branch_id):
         branch_inventory_data = inv_mgr.get_inventory_by_branch(branch_id)
-        all_products_data = prod_mgr.list_products()
+        all_products_data = prod_mgr.get_all_products()
         return branch_inventory_data, all_products_data
 
     with st.spinner("Đang tải dữ liệu kho..."):
