@@ -51,7 +51,7 @@ def render_business_products_page(auth_mgr: AuthManager, branch_mgr: BranchManag
     st.divider()
 
     # --- DỮ LIỆU --- #
-    all_catalog_products = prod_mgr.list_products()
+    all_catalog_products = prod_mgr.get_all_products()
     all_prices = price_mgr.get_all_prices()
     prices_in_branch = {p['sku']: p for p in all_prices if p.get('branch_id') == selected_branch_id}
     listed_skus = prices_in_branch.keys()
@@ -104,7 +104,7 @@ def render_business_products_page(auth_mgr: AuthManager, branch_mgr: BranchManag
                     if pending_schedules:
                         for schedule in pending_schedules:
                             sc_col1, sc_col2, sc_col3 = st.columns([2, 2, 1])
-                            sc_col1.date_input("Ngày áp dụng", value=schedule['apply_date'], disabled=True, key=f"date_{schedule['schedule_id']}")
+                            sc_col1.date_input("Ngày áp dụng", value=schedule['start_date'], disabled=True, key=f"date_{schedule['schedule_id']}")
                             sc_col2.text_input("Giá mới", value=f"{schedule['new_price']:,} VNĐ", disabled=True, key=f"price_{schedule['schedule_id']}")
                             if sc_col3.button("Hủy", key=f"cancel_{schedule['schedule_id']}"):
                                 price_mgr.cancel_schedule(schedule['schedule_id'])
