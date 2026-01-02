@@ -8,22 +8,7 @@ class CategoryManager:
         self.db = db
         self.cat_col = self.db.collection('categories')
 
-    def _get_safe_list(self, collection_ref):
-        """Safely streams documents and returns a list of dictionaries, including document ID."""
-        try:
-            results = []
-            for doc in collection_ref.stream():
-                data = doc.to_dict()
-                if isinstance(data, dict):
-                    data['id'] = doc.id
-                    results.append(data)
-            return results
-        except Exception as e:
-            logging.error(f"Error fetching collection {collection_ref.id}: {e}")
-            return []
-
     def create_category(self, name, prefix):
-        """Creates a new product category document in Firestore."""
         try:
             cat_id = f"CAT-{uuid.uuid4().hex[:4].upper()}"
             data = {
@@ -35,12 +20,24 @@ class CategoryManager:
                 "created_at": firestore.SERVER_TIMESTAMP
             }
             self.cat_col.document(cat_id).set(data)
-            logging.info(f"Category {cat_id} created successfully.")
-            return data
+            return True, f"Tạo danh mục '{name}' thành công!"
         except Exception as e:
             logging.error(f"Failed to create category '{name}': {e}")
-            return None
+            return False, f"Lỗi: {e}"
 
     def get_categories(self):
-        """Retrieves all categories from the Firestore collection."""
-        return self._get_safe_list(self.cat_col)
+        try:
+            docs = self.cat_col.order_by("name").stream()
+            return [{"id": doc.id, **doc.to_dict()} for doc in docs]
+        except Exception as e:
+            logging.error(f"Error getting categories: {e}")
+            return []
+
+    def delete_category(self, cat_id):
+        try:
+            # TODO: Check if category is in use before deleting
+            self.cat_col.document(cat_id).delete()
+            return True, "Xóa danh mục thành công."
+        except Exception as e:
+            logging.error(f"Error deleting category {cat_id}: {e}")
+            return False, f"Lỗi: {e}"
