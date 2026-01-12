@@ -40,7 +40,8 @@ class ReportManager:
             order_count = 0
             op_expenses_by_group = {}
 
-            cost_groups_raw = self.cost_mgr.get_all_category_items('cost_groups')
+            # Sửa lỗi: Sử dụng phương thức mới để lấy các nhóm chi phí
+            cost_groups_raw = self.cost_mgr.get_all_cost_groups()
             cost_groups = {g['id']: g['group_name'] for g in cost_groups_raw}
 
             for trans in all_transactions:
