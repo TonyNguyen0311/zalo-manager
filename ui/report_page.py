@@ -93,14 +93,17 @@ def render_report_page(report_mgr: ReportManager, branch_mgr: BranchManager, aut
         if report_type == "Báo cáo Doanh thu":
             start_datetime = datetime.combine(st.session_state.start_date, datetime.min.time())
             end_datetime = datetime.combine(st.session_state.end_date, datetime.max.time())
-            success, data, message = report_mgr.get_revenue_report(start_datetime, end_datetime, selected_branch_ids)
-            if success and data:
+            result = report_mgr.get_revenue_report(start_datetime, end_datetime, selected_branch_ids)
+            
+            if result["success"] and result.get("data"):
+                data = result["data"]
                 render_section_header("Tổng quan Doanh thu")
                 kpi_cols = st.columns(4)
                 kpi_cols[0].metric("Tổng Doanh thu", format_currency(data.get('total_revenue', 0)))
                 kpi_cols[1].metric("Tổng Lợi nhuận gộp", format_currency(data.get('total_profit', 0)))
                 kpi_cols[2].metric("Số lượng hóa đơn", format_number(data.get('total_orders', 0)))
                 kpi_cols[3].metric("Giá trị/hóa đơn", format_currency(data.get('average_order_value', 0)))
+                
                 st.divider()
                 render_sub_header("Biểu đồ doanh thu theo ngày")
                 revenue_df = data.get('revenue_by_day')
@@ -108,6 +111,7 @@ def render_report_page(report_mgr: ReportManager, branch_mgr: BranchManager, aut
                     st.line_chart(revenue_df)
                 else:
                     st.info("Không có dữ liệu doanh thu trong khoảng thời gian này.")
+                
                 render_sub_header("Top 5 sản phẩm bán chạy nhất (theo doanh thu)")
                 top_products_df = data.get('top_products_by_revenue')
                 if top_products_df is not None and not top_products_df.empty:
@@ -115,7 +119,7 @@ def render_report_page(report_mgr: ReportManager, branch_mgr: BranchManager, aut
                 else:
                     st.info("Không có dữ liệu về sản phẩm bán chạy.")
             else:
-                st.error(f"Lỗi khi lấy báo cáo: {message}")
+                st.error(f"Lỗi khi lấy báo cáo: {result.get('message', 'Lỗi không xác định')}")
 
         # --- BÁO CÁO TỒN KHO -- -
         elif report_type == "Báo cáo Tồn kho":
