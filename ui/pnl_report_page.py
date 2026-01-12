@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import plotly.express as px
 from ui._utils import render_page_title, render_section_header
-from utils.formatters import format_currency, format_number
+from utils.formatters import format_currency
 
 def render_pnl_report_page(report_mgr, branch_mgr, auth_mgr):
     render_page_title("📈 Báo cáo Kết quả Kinh doanh (P&L)")
@@ -33,69 +33,66 @@ def render_pnl_report_page(report_mgr, branch_mgr, auth_mgr):
         format_func=lambda k: branch_options[k]
     )
 
-    if st.button("📊 Xem Báo cáo", width='stretch'):
+    if st.button("📊 Xem Báo cáo", use_container_width=True):
         start_datetime = datetime.combine(start_date, datetime.min.time())
         end_datetime = datetime.combine(end_date, datetime.max.time())
-        branch_id_for_query = None if selected_branch_key == 'all' else selected_branch_key
+        
+        branch_ids_for_query = []
+        if selected_branch_key != 'all':
+            branch_ids_for_query = [selected_branch_key]
 
         try:
             with st.spinner("Đang tổng hợp dữ liệu..."):
-                pnl_data = report_mgr.get_profit_loss_statement(
+                pnl_result = report_mgr.get_profit_loss_statement(
                     start_date=start_datetime,
                     end_date=end_datetime,
-                    branch_id=branch_id_for_query
+                    branch_ids=branch_ids_for_query
                 )
             
-            if not pnl_data or not pnl_data.get("success"):
-                st.error("Không thể tạo báo cáo: " + pnl_data.get("message", "Không có dữ liệu."))
+            if not pnl_result or not pnl_result.get("success"):
+                st.error("Không thể tạo báo cáo: " + pnl_result.get("message", "Không có dữ liệu."))
+                return
+
+            pnl_data = pnl_result.get("data", {})
+            if not pnl_data:
+                st.warning("Không tìm thấy dữ liệu phù hợp với các bộ lọc đã chọn.")
                 return
 
             st.success(f"Báo cáo cho: **{branch_options[selected_branch_key]}** từ **{start_date}** đến **{end_date}**")
             st.markdown("---")
 
-            # --- 2. DISPLAY METRICS (using new formatter) ---
+            # --- 2. DISPLAY METRICS ---
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Tổng Doanh thu", format_currency(pnl_data['total_revenue'], currency_symbol="đ"))
-            col2.metric("Tổng Giá vốn (COGS)", format_currency(pnl_data['total_cogs'], currency_symbol="đ"))
-            col3.metric("Lợi nhuận gộp", format_currency(pnl_data['gross_profit'], currency_symbol="đ"), f"{format_currency(pnl_data['gross_profit'] - pnl_data['total_revenue'], currency_symbol='đ')}")
+            col1.metric("Tổng Doanh thu", format_currency(pnl_data.get('total_revenue', 0)))
+            col2.metric("Tổng Giá vốn (COGS)", format_currency(pnl_data.get('total_cogs', 0)))
+            col3.metric("Lợi nhuận gộp", format_currency(pnl_data.get('gross_profit', 0)))
             
-            net_profit_delta_color = "normal" if pnl_data['net_profit'] >= 0 else "inverse"
-            col4.metric("Lợi nhuận Ròng", format_currency(pnl_data['net_profit'], currency_symbol="đ"), delta_color=net_profit_delta_color)
+            net_profit = pnl_data.get('net_profit', 0)
+            net_profit_delta_color = "normal" if net_profit >= 0 else "inverse"
+            col4.metric("Lợi nhuận Ròng", format_currency(net_profit), delta_color=net_profit_delta_color)
 
             st.markdown("---")
             
             # --- 3. DISPLAY CHARTS & DETAILS ---
             render_section_header("Phân tích Chi phí Hoạt động (OPEX)")
             
-            if pnl_data['total_operating_expenses'] == 0:
+            total_opex = pnl_data.get('total_operating_expenses', 0)
+            if total_opex == 0:
                 st.info("Không phát sinh chi phí hoạt động trong kỳ báo cáo.")
             else:
-                c1, c2 = st.columns(2)
-                
-                # Expenses by Group
                 expenses_by_group = pnl_data.get("operating_expenses_by_group", {})
                 if expenses_by_group:
                     df_group = pd.DataFrame(expenses_by_group.items(), columns=['Nhóm chi phí', 'Số tiền'])
                     df_group = df_group[df_group['Số tiền'] > 0]
-                    fig_group = px.pie(df_group, values='Số tiền', names='Nhóm chi phí', title='Tỷ trọng theo Nhóm chi phí')
-                    c1.plotly_chart(fig_group, use_container_width=True)
-                
-                # Expenses by Classification
-                expenses_by_class = pnl_data.get("operating_expenses_by_classification", {})
-                if expenses_by_class:
-                    class_map = {'FIXED': 'Định phí', 'VARIABLE': 'Biến phí', 'OPEX': 'OPEX', 'CAPEX': 'Khấu hao CAPEX', 'AMORTIZED': 'Khấu hao'}
-                    mapped_expenses = {class_map.get(k, k): v for k, v in expenses_by_class.items()}
-                    df_class = pd.DataFrame(mapped_expenses.items(), columns=['Phân loại', 'Số tiền'])
-                    df_class = df_class[df_class['Số tiền'] > 0]
-                    fig_class = px.pie(df_class, values='Số tiền', names='Phân loại', title='Tỷ trọng theo Phân loại')
-                    c2.plotly_chart(fig_class, use_container_width=True)
-                
-                with st.expander("Xem chi tiết Chi phí hoạt động"):
                     if not df_group.empty:
-                        # Use the new formatter for the dataframe
-                        st.dataframe(df_group.style.format({'Số tiền': lambda x: format_currency(x, currency_symbol='đ')}), use_container_width=True)
+                        fig_group = px.pie(df_group, values='Số tiền', names='Nhóm chi phí', title='Tỷ trọng Chi phí theo Nhóm')
+                        st.plotly_chart(fig_group, use_container_width=True)
+                        with st.expander("Xem chi tiết"):
+                            st.dataframe(df_group.style.format({'Số tiền': lambda x: format_currency(x)}), use_container_width=True)
                     else:
-                        st.write("Không có chi phí để hiển thị.")
+                        st.info("Không có dữ liệu chi phí để hiển thị.")
+                else:
+                    st.info("Không có dữ liệu chi tiết về chi phí hoạt động.")
 
         except Exception as e:
             st.error("Đã xảy ra lỗi khi tạo báo cáo.")
